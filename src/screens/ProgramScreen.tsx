@@ -1,5 +1,6 @@
 import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { colors, shared, spacing, type } from "../theme";
+import { LinearGradient } from "expo-linear-gradient";
+import { colors, gradientHero, shared, spacing, type } from "../theme";
 
 interface ProgramScreenProps {
   businessName: string;
@@ -12,6 +13,7 @@ interface ProgramScreenProps {
   onToggleNearby: (value: boolean) => void;
   onToggleNfc: (value: boolean) => void;
   onStaffCodeChange: (value: string) => void;
+  onBuildPass: () => void;
 }
 
 interface ToggleRowProps {
@@ -49,11 +51,34 @@ export function ProgramScreen({
   onToggleNearby,
   onToggleNfc,
   onStaffCodeChange,
+  onBuildPass,
 }: ProgramScreenProps) {
   return (
     <View>
       <Text style={styles.title}>Program</Text>
       <Text style={styles.sub}>How {businessName} rewards regulars.</Text>
+
+      <LinearGradient
+        colors={gradientHero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.buildCard}
+      >
+        <Text style={styles.buildTitle}>Build your pass</Text>
+        <Text style={styles.buildSub}>
+          Set the name, reward, colour, and links. Preview the pass live,
+          then publish it. Customers add it to Wallet with a scan, no app
+          download.
+        </Text>
+        <TouchableOpacity
+          accessibilityRole="button"
+          activeOpacity={0.85}
+          onPress={onBuildPass}
+          style={styles.buildButton}
+        >
+          <Text style={styles.buildButtonText}>Start building</Text>
+        </TouchableOpacity>
+      </LinearGradient>
 
       <View style={[shared.card, styles.rewardCard]}>
         <Text style={styles.rewardLabel}>Reward rule</Text>
@@ -133,6 +158,35 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "400",
     lineHeight: 22,
+  },
+  buildButton: {
+    alignItems: "center",
+    backgroundColor: colors.darkText,
+    borderRadius: spacing.radiusPill,
+    justifyContent: "center",
+    marginTop: 14,
+    minHeight: spacing.touchMin,
+    paddingHorizontal: 20,
+  },
+  buildButtonText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  buildCard: {
+    borderRadius: spacing.radiusCard,
+    marginTop: 18,
+    padding: 22,
+  },
+  buildSub: {
+    color: colors.darkText,
+    marginTop: 6,
+    opacity: 0.8,
+    ...type.body,
+  },
+  buildTitle: {
+    color: colors.darkText,
+    ...type.section,
   },
   divider: {
     backgroundColor: colors.border,

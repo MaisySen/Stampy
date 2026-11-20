@@ -15,9 +15,11 @@ import { WalletScreen } from "./src/screens/WalletScreen";
 import { StampScreen } from "./src/screens/StampScreen";
 import { AnalyticsScreen } from "./src/screens/AnalyticsScreen";
 import { ProgramScreen } from "./src/screens/ProgramScreen";
+import { PassBuilderScreen } from "./src/screens/PassBuilderScreen";
 
 export default function App() {
   const [tab, setTab] = useState<TabKey>("wallet");
+  const [builderOpen, setBuilderOpen] = useState(false);
   const [stamps, setStamps] = useState(5);
   const [business, setBusiness] = useState<BusinessState>(demoBusiness);
   const [birthdayOn, setBirthdayOn] = useState(true);
@@ -69,11 +71,19 @@ export default function App() {
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
-      <ScrollView
-        contentContainerStyle={shared.scroll}
-        showsVerticalScrollIndicator={false}
-        style={shared.screen}
-      >
+      {builderOpen ? (
+        <PassBuilderScreen
+          initialName={business.name}
+          initialReward={business.reward}
+          onClose={() => setBuilderOpen(false)}
+        />
+      ) : (
+        <>
+          <ScrollView
+            contentContainerStyle={shared.scroll}
+            showsVerticalScrollIndicator={false}
+            style={shared.screen}
+          >
         {tab === "wallet" && (
           <WalletScreen
             businessName={business.name}
@@ -105,10 +115,13 @@ export default function App() {
             onToggleNearby={setNearbyOn}
             onToggleNfc={setNfcOn}
             onStaffCodeChange={changeStaffCode}
+            onBuildPass={() => setBuilderOpen(true)}
           />
         )}
-      </ScrollView>
-      <BottomNav active={tab} onSelect={setTab} />
+          </ScrollView>
+          <BottomNav active={tab} onSelect={setTab} />
+        </>
+      )}
     </View>
   );
 }
