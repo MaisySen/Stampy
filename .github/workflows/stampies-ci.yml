@@ -38,6 +38,7 @@ jobs:
           set -euo pipefail
           npm run typecheck
           npm test
+          node --test tests/wallet-server.test.mjs
           python3 scripts/make-assets.py
           node scripts/check-ci-config.mjs
           ./node_modules/.bin/expo export --platform android --max-workers 2 --output-dir dist/ci-android
