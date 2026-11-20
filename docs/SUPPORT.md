@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-20.
 
-Stampy is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Website: https://fintex.au
+Stampies is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Website: https://fintex.au
 
 ## Contact
 
@@ -22,7 +22,7 @@ Data looks wrong: the business can clear demo data from the Analytics screen and
 
 ## No login, no ads
 
-No login is needed to use Stampy, and no ads are shown. Support never asks for a password or a staff code by email.
+No login is needed to use Stampies, and no ads are shown. Support never asks for a password or a staff code by email.
 
 ## Response time
 

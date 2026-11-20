@@ -1,4 +1,4 @@
-# Stampy decisions
+# Stampies decisions
 
 Five open decisions. Each has a recommendation. Nothing here is decided until it is logged at the bottom.
 

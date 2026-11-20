@@ -1,6 +1,6 @@
-# Stampy plan
+# Stampies plan
 
-Condensed from the Stampy Full Plan space. Short plain sentences. No filler.
+Condensed from the Stampies Full Plan space. Short plain sentences. No filler.
 
 ## Concept
 
@@ -28,7 +28,7 @@ Businesses: small cafes, bakeries, and barbers. They want repeat visits, and a s
 
 Nearby nudge: the Wallet card only knows where the business is. The phone works out when the customer is close, on the device, and shows a lock screen nudge. No live tracking.
 
-Birthday treat: if the customer shares a birthday when they join, Stampy sends a reward automatically.
+Birthday treat: if the customer shares a birthday when they join, Stampies sends a reward automatically.
 
 Readable analytics: stamps given, customers who visited, stamps over time, split by NFC tap, QR code, and staff. No 40 chart dashboard.
 
@@ -39,9 +39,9 @@ A business builds its own pass in the app, in four steps.
 1. Details: business name, reward text, stamp target with 9 as the default.
 2. Design: brand colour, cover style, optional business photo URL.
 3. Links: menu link, Wi-Fi name and password, feedback link, one external link with a label. All optional, all clearable.
-4. Preview and publish: a live phone preview titled Building your pass. The photo is front and centre. The stamp count shows big as 0/9. A QR code adds the pass to Wallet. The pass is marked Powered by Stampy.
+4. Preview and publish: a live phone preview titled Building your pass. The photo is front and centre. The stamp count shows big as 0/9. A QR code adds the pass to Wallet. The pass is marked Powered by Stampies.
 
-Publish shows the share link and QR code. The customer needs no app download. Every pass keeps the Stampy differentiators: Wallet pass, NFC tap, QR code and staff stamp, nearby nudge, birthday reward, and business analytics.
+Publish shows the share link and QR code. The customer needs no app download. Every pass keeps the Stampies differentiators: Wallet pass, NFC tap, QR code and staff stamp, nearby nudge, birthday reward, and business analytics.
 
 ## Screens
 
@@ -57,7 +57,7 @@ Publish shows the share link and QR code. The customer needs no app download. Ev
 10. Business Settings. Business details, legal line, data clear, version.
 11. Pass builder, Details and Design. Business name, reward text, stamp target, brand colour, cover style, photo URL.
 12. Pass builder, Links. Menu, Wi-Fi, feedback, and one external link.
-13. Pass builder, Preview and publish. Live phone preview, big 0/9 stamp count, QR code, Powered by Stampy, publish and share.
+13. Pass builder, Preview and publish. Live phone preview, big 0/9 stamp count, QR code, Powered by Stampies, publish and share.
 
 ## Roadmap
 
@@ -69,11 +69,15 @@ Later: POS integrations, tiered rewards, gift cards, customer segments.
 
 ## Tech
 
-Expo with TypeScript, React Native, one codebase for iOS and Android. EAS Build and EAS Update, preview channel first, then production. Runtime version 1.0.0. iOS bundle ID au.fintex.stampy. Android package au.fintex.stampy. Version 1.0.0.
+Expo with TypeScript, React Native, one codebase for iOS and Android. EAS Build and EAS Update, preview channel first, then production. Runtime version 1.0.0. iOS bundle ID au.fintex.stampies. Android package au.fintex.stampies. Version 1.0.0.
 
 Wallet passes: Apple Wallet PassKit and Google Wallet API, on the server. Pass updates on each stamp. NFC tap uses a counter tag. QR codes are per business, rotated. Staff stamps need a PIN. Fraud controls: cooldown between stamps, one stamp per customer per day per business, and a daily limit.
 
 No login and no ads for now. No hard coded popular content. Lists are user made and clearable.
+
+## Store
+
+App Store record, for the main Tab to create. Name Stampies. Language English (Australia). Bundle ID au.fintex.stampies. SKU stampies-ios-1. Platform iOS. Full Access. The main Tab returns the numeric Apple ID after it creates the record. The Admin App Store Connect API key goes in repo secrets, not in chat. The EAS project ID is still the zero placeholder in app.json and eas.json. The Google Play service account key is still needed for this Tab. The CI workflow file did not land in the repo. GitHub returned 403 Resource not accessible by integration. The file stays local at .github/workflows/ci.yml until it can be added on github.com.
 
 ## Pricing
 
@@ -97,7 +101,7 @@ Churn: small businesses stop paying if they see no return. Answer: show stamps a
 
 ## Build checklist
 
-Status at 2026-11-20, local phase, not pushed yet. 23 of 34 done, 3 partial, 8 open. A partial item has its UI flow done and its server or hardware part still open.
+Status at 2026-11-20, after the rename to Stampies. 23 of 34 done, 3 partial, 8 open. A partial item has its UI flow done and its server or hardware part still open. The phase was pushed as bcb67cb and 3291cfa. The repo is at 11 commits, head 3291cfa.
 
 Product:
 
@@ -151,7 +155,7 @@ Pass builder:
 - [x] 30. Build the four step builder: Details, Design, Links, Preview.
 - [x] 31. Build the live phone preview with photo, big 0/9 count, and QR code.
 - [x] 32. Add the publish step with share link and QR code.
-- [x] 33. Keep the Powered by Stampy mark on every pass.
+- [x] 33. Keep the Powered by Stampies mark on every pass.
 - [x] 34. Check the builder on phone width: spacing, alignment, touch targets.
 
 ## Decisions

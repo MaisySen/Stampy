@@ -1,8 +1,8 @@
-# Stampy
+# Stampies
 
 Paper stamp cards, rebuilt for Apple and Google Wallet.
 
-Stampy is a digital loyalty app for small businesses. Customers add a business card to their Wallet once. They earn stamps by NFC tap, QR code, or staff stamp. When the card is full, they get the reward. No app download. No card to lose. No login.
+Stampies is a digital loyalty app for small businesses. Customers add a business card to their Wallet once. They earn stamps by NFC tap, QR code, or staff stamp. When the card is full, they get the reward. No app download. No card to lose. No login.
 
 ## Who it is for
 
@@ -26,7 +26,7 @@ Business side:
 
 ## Pass builder
 
-A business builds its own pass in four steps: Details, Design, Links, Preview. Details are the business name, reward text, and stamp target, with 9 as the default. Design is the brand colour, cover style, and an optional business photo. Links are the menu, Wi-Fi, feedback, and one external link. All fields are business made, optional where marked, and clearable. The Preview step shows a live phone preview titled Building your pass, with the photo front and centre, the stamp count big as 0/9, and a QR code to add the pass to Wallet. Publish shows the share link and QR code. The customer needs no app download to add the pass. Every pass is marked Powered by Stampy.
+A business builds its own pass in four steps: Details, Design, Links, Preview. Details are the business name, reward text, and stamp target, with 9 as the default. Design is the brand colour, cover style, and an optional business photo. Links are the menu, Wi-Fi, feedback, and one external link. All fields are business made, optional where marked, and clearable. The Preview step shows a live phone preview titled Building your pass, with the photo front and centre, the stamp count big as 0/9, and a QR code to add the pass to Wallet. Publish shows the share link and QR code. The customer needs no app download to add the pass. Every pass is marked Powered by Stampies.
 
 ## Fraud controls
 
@@ -38,12 +38,12 @@ The Wallet screen shows a birthday reward card when the birthday is this month, 
 
 ## Legal pages
 
-Privacy, terms, and support pages live in `docs/PRIVACY.md`, `docs/TERMS.md`, and `docs/SUPPORT.md`, and in the app under Program, About Stampy. Each names Fintex Australia Pty Ltd (ABN 60 688 406 108), contact contact@fintex.au, and website https://fintex.au. No login is needed, and no ads are shown.
+Privacy, terms, and support pages live in `docs/PRIVACY.md`, `docs/TERMS.md`, and `docs/SUPPORT.md`, and in the app under Program, About Stampies. Each names Fintex Australia Pty Ltd (ABN 60 688 406 108), contact contact@fintex.au, and website https://fintex.au. No login is needed, and no ads are shown.
 
 ## What is in this repo
 
 - `App.tsx` and `src/`: the Expo app. Customer Wallet card, stamp flow, business Analytics, program settings, and the pass builder.
-- `src/components/PassPreview.tsx`: the live phone preview for a pass, with the photo, stamp count, QR code, and Powered by Stampy mark.
+- `src/components/PassPreview.tsx`: the live phone preview for a pass, with the photo, stamp count, QR code, and Powered by Stampies mark.
 - `src/screens/LegalScreen.tsx`: in-app privacy, terms, and support pages, opened from Program.
 - `docs/PRIVACY.md`, `docs/TERMS.md`, `docs/SUPPORT.md`: the store readiness pages.
 - `src/lib/fraud.ts`, `src/lib/loyalty.ts`, `src/lib/analytics.ts`, `src/lib/stamps.ts`: pure logic, covered by tests in `tests/`.
@@ -96,8 +96,8 @@ MVP is: Wallet pass creation, the pass builder, QR and staff stamping, reward re
 
 ## Privacy
 
-The Wallet card only knows where the business is. The phone works out when the customer is nearby, on the device. Stampy does not track a customer live. There is no login and no ads for now.
+The Wallet card only knows where the business is. The phone works out when the customer is nearby, on the device. Stampies does not track a customer live. There is no login and no ads for now.
 
 ## Legal
 
-Stampy is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Contact: contact@fintex.au. Website: https://fintex.au
+Stampies is provided by Fintex Australia Pty Ltd (ABN 60 688 406 108), New South Wales, Australia. Contact: contact@fintex.au. Website: https://fintex.au
