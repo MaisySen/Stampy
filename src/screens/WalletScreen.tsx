@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, shared, spacing, type } from "../theme";
-import { BIRTHDAY_DAYS_TO_GO, STAMPS_TO_REWARD } from "../data";
+import { DEMO_BIRTHDAY, STAMPS_TO_REWARD } from "../data";
+import { daysUntilBirthday, isBirthdayMonth, isBirthdayToday } from "../lib/loyalty";
 import { StampCard } from "../components/StampCard";
 
 interface WalletScreenProps {
@@ -19,8 +21,18 @@ export function WalletScreen({
   onRedeem,
   onGoToStamp,
 }: WalletScreenProps) {
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const rewardReady = stamps >= STAMPS_TO_REWARD;
   const stampsLeft = Math.max(0, STAMPS_TO_REWARD - stamps);
+  const today = new Date();
+  const birthdayToday = isBirthdayToday(DEMO_BIRTHDAY.month, DEMO_BIRTHDAY.day, today);
+  const birthdayThisMonth = isBirthdayMonth(DEMO_BIRTHDAY.month, today);
+  const birthdayInDays = daysUntilBirthday(DEMO_BIRTHDAY.month, DEMO_BIRTHDAY.day, today);
+  const nudgeText = rewardReady
+    ? "Your reward is ready. Show this card at the counter."
+    : stampsLeft === 1
+      ? "Come in for a treat. Your card is one stamp from a free coffee."
+      : `Come in for a treat. Your card is ${stampsLeft} stamps from a free coffee.`;
   return (
     <View>
       <View style={styles.greeting}>
@@ -28,11 +40,26 @@ export function WalletScreen({
           <Text style={styles.hello}>Good morning</Text>
           <Text style={styles.name}>Corner Cafe regular</Text>
         </View>
-        <View style={styles.bell}>
+        <TouchableOpacity
+          accessibilityLabel="Alerts"
+          accessibilityRole="button"
+          activeOpacity={0.85}
+          onPress={() => setAlertsOpen((prev) => !prev)}
+          style={styles.bell}
+        >
           <Ionicons name="notifications-outline" size={20} color={colors.text} />
           <View style={styles.dot} />
-        </View>
+        </TouchableOpacity>
       </View>
+
+      {alertsOpen && (
+        <View style={[shared.card, styles.alertsCard]}>
+          <Text style={shared.cardTitle}>No new alerts</Text>
+          <Text style={[shared.cardMuted, styles.alertsSub]}>
+            Nearby nudges and birthday treats will show here when they arrive.
+          </Text>
+        </View>
+      )}
 
       <StampCard businessName={businessName} stamps={stamps} reward={reward} />
 
@@ -65,23 +92,48 @@ export function WalletScreen({
         </View>
         <View style={styles.nudgeText}>
           <Text style={shared.cardTitle}>You are near Corner Cafe</Text>
-          <Text style={shared.cardMuted}>
-            Come in for a treat. Your card is one stamp from a free coffee.
-          </Text>
+          <Text style={shared.cardMuted}>{nudgeText}</Text>
         </View>
       </View>
 
-      <View style={[shared.card, styles.birthdayCard]}>
-        <View style={styles.nudgeIcon}>
-          <Ionicons name="gift-outline" size={20} color={colors.darkText} />
+      {birthdayToday ? (
+        <View style={[shared.card, styles.birthdayCard]}>
+          <View style={styles.nudgeIcon}>
+            <Ionicons name="gift-outline" size={20} color={colors.darkText} />
+          </View>
+          <View style={styles.nudgeText}>
+            <Text style={shared.cardTitle}>Happy birthday</Text>
+            <Text style={shared.cardMuted}>
+              Your free treat is ready today. Show this card at the counter.
+            </Text>
+          </View>
         </View>
-        <View style={styles.nudgeText}>
-          <Text style={shared.cardTitle}>Birthday in {BIRTHDAY_DAYS_TO_GO} days</Text>
-          <Text style={shared.cardMuted}>
-            A free slice is waiting. It will appear on your card on the day.
-          </Text>
+      ) : birthdayThisMonth ? (
+        <View style={[shared.card, styles.birthdayCard]}>
+          <View style={styles.nudgeIcon}>
+            <Ionicons name="gift-outline" size={20} color={colors.darkText} />
+          </View>
+          <View style={styles.nudgeText}>
+            <Text style={shared.cardTitle}>Birthday this month</Text>
+            <Text style={shared.cardMuted}>
+              A free slice is waiting. It lands on your card in {birthdayInDays}{" "}
+              {birthdayInDays === 1 ? "day" : "days"}.
+            </Text>
+          </View>
         </View>
-      </View>
+      ) : (
+        <View style={[shared.card, styles.birthdayCard]}>
+          <View style={styles.nudgeIcon}>
+            <Ionicons name="gift-outline" size={20} color={colors.darkText} />
+          </View>
+          <View style={styles.nudgeText}>
+            <Text style={shared.cardTitle}>Birthday in {birthdayInDays} days</Text>
+            <Text style={shared.cardMuted}>
+              A free slice is waiting. It will appear on your card on the day.
+            </Text>
+          </View>
+        </View>
+      )}
 
       <Text style={styles.privacy}>
         Your card only knows where the business is. Your phone works out when
@@ -117,6 +169,13 @@ const styles = StyleSheet.create({
   actionSub: {
     marginTop: 4,
     maxWidth: 190,
+  },
+  alertsCard: {
+    gap: 4,
+    marginBottom: spacing.gap,
+  },
+  alertsSub: {
+    marginTop: 4,
   },
   bell: {
     alignItems: "center",

@@ -47,3 +47,7 @@ Status: Decided. Expo with TypeScript. Decided 2026-11-20, at the start of this 
 | Date | Decision | What was decided | Why |
 | --- | --- | --- | --- |
 | 2026-11-20 | D5 Platform | Expo with TypeScript, EAS Build and Update | One codebase for iOS and Android, matches the runbook OTA path |
+
+## Phase note, 2026-11-20
+
+No new decisions in this phase. D1 to D4 remain open. The build uses the existing recommendations: buy 8, get the 9th free; QR and staff stamping in the MVP, NFC in V2; monthly per location with a free trial. Fraud controls use a 4 digit staff PIN, a 60 second cooldown, and one stamp per day. Win-back uses 30 days quiet. These are the recommendations as written, not new decisions.

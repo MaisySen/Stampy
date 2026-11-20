@@ -1,18 +1,28 @@
 import { useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, shared, spacing, type } from "../theme";
-import { DEMO_STAFF_CODE, STAMPS_TO_REWARD } from "../data";
+import { STAMPS_TO_REWARD } from "../data";
 import type { StampMethod } from "../data";
+import { blockMessage, canStamp, checkStaffPin, dayString } from "../lib/fraud";
+import type { StampCheck } from "../lib/fraud";
 import { QrCode } from "../components/QrCode";
 
 type Method = StampMethod;
-type FlowState = "idle" | "done";
+type FlowState = "idle" | "done" | "blocked";
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
 interface StampScreenProps {
   stamps: number;
   staffCode: string;
+  lastStampAtMs: number | null;
+  lastStampDay: string | null;
   onStamp: (method: StampMethod) => void;
 }
 
@@ -22,19 +32,66 @@ const METHODS: Array<{ key: Method; label: string; hint: string; icon: IconName 
   { key: "Staff", label: "Staff", hint: "Staff add the stamp for you", icon: "person-outline" },
 ];
 
-export function StampScreen({ stamps, staffCode, onStamp }: StampScreenProps) {
+export function StampScreen({
+  stamps,
+  staffCode,
+  lastStampAtMs,
+  lastStampDay,
+  onStamp,
+}: StampScreenProps) {
   const [method, setMethod] = useState<Method>("NFC");
   const [flow, setFlow] = useState<FlowState>("idle");
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [blocked, setBlocked] = useState<StampCheck | null>(null);
   const rewardReady = stamps >= STAMPS_TO_REWARD;
+  const cardFull = rewardReady;
+
+  function checkFraud(): StampCheck | null {
+    const check = canStamp(lastStampAtMs, lastStampDay, Date.now(), dayString(new Date()));
+    if (!check.allowed) {
+      setBlocked(check);
+      setFlow("blocked");
+      return check;
+    }
+    return null;
+  }
 
   function handleStamp() {
+    if (cardFull) {
+      return;
+    }
+    if (checkFraud() !== null) {
+      return;
+    }
+    if (method === "Staff") {
+      if (!checkStaffPin(pin, staffCode)) {
+        setPinError("Wrong staff code. Ask staff to try again.");
+        return;
+      }
+      setPinError("");
+      setPin("");
+    }
     onStamp(method);
+    setBlocked(null);
     setFlow("done");
+  }
+
+  function recheck() {
+    const check = canStamp(lastStampAtMs, lastStampDay, Date.now(), dayString(new Date()));
+    if (check.allowed) {
+      setBlocked(null);
+      setFlow("idle");
+    } else {
+      setBlocked(check);
+    }
   }
 
   function pick(next: Method) {
     setMethod(next);
     setFlow("idle");
+    setPinError("");
+    setBlocked(null);
   }
 
   return (
@@ -85,10 +142,13 @@ export function StampScreen({ stamps, staffCode, onStamp }: StampScreenProps) {
           <TouchableOpacity
             accessibilityRole="button"
             activeOpacity={0.85}
+            disabled={cardFull}
             onPress={handleStamp}
-            style={styles.primaryButton}
+            style={[styles.primaryButton, cardFull && styles.buttonDisabled]}
           >
-            <Text style={styles.primaryButtonText}>Simulate tap</Text>
+            <Text style={styles.primaryButtonText}>
+              {cardFull ? "Card is full" : "Simulate tap"}
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -98,35 +158,63 @@ export function StampScreen({ stamps, staffCode, onStamp }: StampScreenProps) {
           <QrCode size={126} />
           <Text style={shared.cardTitle}>Scan at the counter</Text>
           <Text style={[shared.cardMuted, styles.flowSub]}>
-            Code STAMPY-4821. The code changes each day at the counter.
+            Code STAMPY-{staffCode}. The code changes each day at the counter.
           </Text>
           <TouchableOpacity
             accessibilityRole="button"
             activeOpacity={0.85}
+            disabled={cardFull}
             onPress={handleStamp}
-            style={styles.primaryButton}
+            style={[styles.primaryButton, cardFull && styles.buttonDisabled]}
           >
-            <Text style={styles.primaryButtonText}>I scanned the code</Text>
+            <Text style={styles.primaryButtonText}>
+              {cardFull ? "Card is full" : "I scanned the code"}
+            </Text>
           </TouchableOpacity>
         </View>
       )}
 
       {method === "Staff" && (
         <View style={[shared.card, styles.flow]}>
-          <Text style={styles.staffCode}>{staffCode}</Text>
-          <Text style={shared.cardTitle}>Staff code</Text>
+          <Text style={shared.cardTitle}>Staff stamp</Text>
           <Text style={[shared.cardMuted, styles.flowSub]}>
-            Show this screen to staff. They confirm the code, then add the
-            stamp. The code is set in Program settings.
+            Staff enter the 4 digit staff code to add the stamp. The code is
+            set in Program settings.
           </Text>
+          <TextInput
+            accessibilityLabel="Staff PIN"
+            keyboardType="number-pad"
+            maxLength={4}
+            onChangeText={(v) => {
+              setPin(v.replace(/[^0-9]/g, "").slice(0, 4));
+              setPinError("");
+            }}
+            placeholder="0000"
+            placeholderTextColor={colors.faint}
+            secureTextEntry
+            style={[styles.pinInput, pinError.length > 0 && styles.pinInputError]}
+            value={pin}
+          />
+          {pinError.length > 0 && (
+            <Text style={styles.errorText}>{pinError}</Text>
+          )}
           <TouchableOpacity
             accessibilityRole="button"
             activeOpacity={0.85}
+            disabled={cardFull || pin.length !== 4}
             onPress={handleStamp}
-            style={styles.primaryButton}
+            style={[
+              styles.primaryButton,
+              (cardFull || pin.length !== 4) && styles.buttonDisabled,
+            ]}
           >
-            <Text style={styles.primaryButtonText}>Staff added the stamp</Text>
+            <Text style={styles.primaryButtonText}>
+              {cardFull ? "Card is full" : "Add the stamp"}
+            </Text>
           </TouchableOpacity>
+          <Text style={styles.pinHint}>
+            Enter all 4 digits. The button stays off until the code is full.
+          </Text>
         </View>
       )}
 
@@ -146,15 +234,57 @@ export function StampScreen({ stamps, staffCode, onStamp }: StampScreenProps) {
         </View>
       )}
 
+      {flow === "blocked" && blocked !== null && (
+        <View style={[shared.card, styles.blockedCard]}>
+          <Ionicons name="alert-circle" size={28} color={colors.red} />
+          <View style={styles.doneText}>
+            <Text style={shared.cardTitle}>Stamp blocked</Text>
+            <Text style={shared.cardMuted}>{blockMessage(blocked)}</Text>
+            <Text style={[shared.cardMuted, styles.blockedSub]}>
+              Fraud controls: one stamp per day, and 60 seconds between stamps.
+            </Text>
+          </View>
+          <TouchableOpacity
+            accessibilityRole="button"
+            activeOpacity={0.85}
+            onPress={recheck}
+            style={styles.recheckButton}
+          >
+            <Text style={styles.recheckButtonText}>Check again</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {cardFull && (
+        <View style={[shared.card, styles.fullCard]}>
+          <Text style={shared.cardTitle}>Your card is full</Text>
+          <Text style={[shared.cardMuted, styles.flowSub]}>
+            Redeem the reward on the Wallet tab, then start a new card.
+          </Text>
+        </View>
+      )}
+
       <Text style={styles.note}>
-        Demo staff code is {DEMO_STAFF_CODE} until the business sets its own
-        code. Fraud controls apply: one stamp per day, per business.
+        Fraud controls apply: staff PIN, 60 second cooldown, one stamp per
+        day per business. No login is needed.
       </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  blockedCard: {
+    alignItems: "flex-start",
+    borderColor: colors.red,
+    gap: 12,
+    marginTop: spacing.gap,
+  },
+  blockedSub: {
+    marginTop: 6,
+  },
+  buttonDisabled: {
+    opacity: 0.45,
+  },
   done: {
     alignItems: "center",
     flexDirection: "row",
@@ -165,6 +295,12 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
+  errorText: {
+    color: colors.red,
+    marginTop: 8,
+    textAlign: "center",
+    ...type.body,
+  },
   flow: {
     alignItems: "center",
     marginTop: spacing.gap,
@@ -173,6 +309,10 @@ const styles = StyleSheet.create({
   flowSub: {
     marginTop: 6,
     textAlign: "center",
+  },
+  fullCard: {
+    gap: 6,
+    marginTop: spacing.gap,
   },
   method: {
     backgroundColor: colors.surface,
@@ -216,6 +356,29 @@ const styles = StyleSheet.create({
     ...type.caption,
     lineHeight: 18,
   },
+  pinHint: {
+    color: colors.faint,
+    marginTop: 10,
+    textAlign: "center",
+    ...type.caption,
+  },
+  pinInput: {
+    backgroundColor: colors.surface2,
+    borderRadius: spacing.radiusInner,
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: "700",
+    letterSpacing: 10,
+    marginTop: 16,
+    minHeight: 56,
+    paddingHorizontal: 16,
+    textAlign: "center",
+    width: 180,
+  },
+  pinInputError: {
+    borderColor: colors.red,
+    borderWidth: 1.5,
+  },
   primaryButton: {
     alignItems: "center",
     backgroundColor: colors.lavender,
@@ -230,11 +393,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
-  staffCode: {
+  recheckButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface2,
+    borderRadius: spacing.radiusPill,
+    justifyContent: "center",
+    minHeight: spacing.touchMin,
+    paddingHorizontal: 20,
+  },
+  recheckButtonText: {
     color: colors.text,
-    fontSize: 44,
-    fontWeight: "700",
-    letterSpacing: 8,
+    fontSize: 14,
+    fontWeight: "600",
   },
   sub: {
     color: colors.muted,

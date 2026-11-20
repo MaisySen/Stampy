@@ -176,7 +176,7 @@ export function PassBuilderScreen({
                 activeOpacity={0.85}
                 disabled={draft.target <= MIN_TARGET}
                 onPress={() => set("target", draft.target - 1)}
-                style={styles.stepperButton}
+                style={[styles.stepperButton, draft.target <= MIN_TARGET && styles.stepperButtonDisabled]}
               >
                 <Text style={styles.stepperButtonText}>-</Text>
               </TouchableOpacity>
@@ -187,7 +187,7 @@ export function PassBuilderScreen({
                 activeOpacity={0.85}
                 disabled={draft.target >= MAX_TARGET}
                 onPress={() => set("target", draft.target + 1)}
-                style={styles.stepperButton}
+                style={[styles.stepperButton, draft.target >= MAX_TARGET && styles.stepperButtonDisabled]}
               >
                 <Text style={styles.stepperButtonText}>+</Text>
               </TouchableOpacity>
@@ -572,6 +572,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     gap: 6,
+    justifyContent: "center",
+    minHeight: spacing.touchMin,
   },
   stepDot: {
     alignItems: "center",
@@ -618,6 +620,9 @@ const styles = StyleSheet.create({
     height: 56,
     justifyContent: "center",
     width: 56,
+  },
+  stepperButtonDisabled: {
+    opacity: 0.4,
   },
   stepperButtonText: {
     color: colors.text,

@@ -15,3 +15,4 @@ Rules from the runbook:
 | Version | Build | Date | Commit | CI run | What changed |
 | --- | --- | --- | --- | --- | --- |
 | 1.0.0 | 1 | 2026-11-20 | initial commit | none yet | First code in the repo. Docs, config, and the Expo app scaffold. No store build yet. |
+| 1.0.0 | local phase | 2026-11-20 | not pushed | local only | Fraud controls wired into the stamp flow, birthday and win-back UI, privacy, terms, and support pages, polish pass. Typecheck exit 0, tests 33 pass 0 fail, scan passed. Ready to push in small commits once the GitHub write is approved again. |

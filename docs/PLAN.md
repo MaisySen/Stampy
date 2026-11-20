@@ -97,60 +97,62 @@ Churn: small businesses stop paying if they see no return. Answer: show stamps a
 
 ## Build checklist
 
+Status at 2026-11-20, local phase, not pushed yet. 23 of 34 done, 3 partial, 8 open. A partial item has its UI flow done and its server or hardware part still open.
+
 Product:
 
-1. Define the reward rule.
-2. Define the stamp methods.
-3. Define the nearby nudge copy and limits.
-4. Define the birthday reward.
-5. Define the win-back rule.
+- [x] 1. Define the reward rule.
+- [x] 2. Define the stamp methods.
+- [x] 3. Define the nearby nudge copy and limits.
+- [x] 4. Define the birthday reward.
+- [x] 5. Define the win-back rule.
 
 Wallet:
 
-6. Design the Apple Wallet pass.
-7. Design the Google Wallet pass.
-8. Build the pass install flow.
-9. Update the pass on each stamp.
-10. Handle pass expiry and reward state.
+- [ ] 6. Design the Apple Wallet pass.
+- [ ] 7. Design the Google Wallet pass.
+- [ ] 8. Build the pass install flow.
+- [ ] 9. Update the pass on each stamp.
+- [ ] 10. Handle pass expiry and reward state.
 
 Stamp:
 
-11. Build the NFC tap flow.
-12. Build the QR scan flow.
-13. Build the staff stamp with PIN.
-14. Add fraud controls: cooldown, daily limit, device check.
-15. Add an offline stamp queue.
+- [~] 11. Build the NFC tap flow. UI flow done, real hardware tap ships in V2.
+- [x] 12. Build the QR scan flow.
+- [x] 13. Build the staff stamp with PIN.
+- [~] 14. Add fraud controls: cooldown, daily limit, device check. Cooldown, daily limit, and staff PIN are wired into the stamp flow. Device check is still open.
+- [ ] 15. Add an offline stamp queue.
 
 Analytics:
 
-16. Show stamps given total.
-17. Show visitors and repeat rate.
-18. Show stamps over time chart.
-19. Show the split by NFC, QR, and staff.
-20. Show the lapsed customer list.
+- [x] 16. Show stamps given total.
+- [x] 17. Show visitors and repeat rate.
+- [x] 18. Show stamps over time chart.
+- [x] 19. Show the split by NFC, QR, and staff.
+- [x] 20. Show the lapsed customer list.
 
 Design:
 
-21. Lock the Orbix theme tokens.
-22. Build the Wallet screen.
-23. Build the Analytics screen.
-24. Build the stamp flow screens.
-25. Build empty states and error states.
+- [x] 21. Lock the Orbix theme tokens.
+- [x] 22. Build the Wallet screen.
+- [x] 23. Build the Analytics screen.
+- [x] 24. Build the stamp flow screens.
+- [x] 25. Build empty states and error states.
 
 Release:
 
-26. Typecheck and tests green.
-27. Ship a TestFlight internal build.
-28. Ship a Play internal track build.
-29. Publish store listings and privacy pages.
+- [x] 26. Typecheck and tests green.
+- [ ] 27. Ship a TestFlight internal build.
+- [ ] 28. Ship a Play internal track build.
+- [~] 29. Publish store listings and privacy pages. Privacy, terms, and support pages are written in docs and in the app. Store listings still need the App Store record and the Play Console steps.
 
 Pass builder:
 
-30. Build the four step builder: Details, Design, Links, Preview.
-31. Build the live phone preview with photo, big 0/9 count, and QR code.
-32. Add the publish step with share link and QR code.
-33. Keep the Powered by Stampy mark on every pass.
-34. Check the builder on phone width: spacing, alignment, touch targets.
+- [x] 30. Build the four step builder: Details, Design, Links, Preview.
+- [x] 31. Build the live phone preview with photo, big 0/9 count, and QR code.
+- [x] 32. Add the publish step with share link and QR code.
+- [x] 33. Keep the Powered by Stampy mark on every pass.
+- [x] 34. Check the builder on phone width: spacing, alignment, touch targets.
 
 ## Decisions
 

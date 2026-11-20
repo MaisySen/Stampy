@@ -1,6 +1,7 @@
 import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, gradientHero, shared, spacing, type } from "../theme";
+import type { LegalPage } from "./LegalScreen";
 
 interface ProgramScreenProps {
   businessName: string;
@@ -14,6 +15,7 @@ interface ProgramScreenProps {
   onToggleNfc: (value: boolean) => void;
   onStaffCodeChange: (value: string) => void;
   onBuildPass: () => void;
+  onOpenLegal: (page: LegalPage) => void;
 }
 
 interface ToggleRowProps {
@@ -52,6 +54,7 @@ export function ProgramScreen({
   onToggleNfc,
   onStaffCodeChange,
   onBuildPass,
+  onOpenLegal,
 }: ProgramScreenProps) {
   return (
     <View>
@@ -137,10 +140,28 @@ export function ProgramScreen({
           Version 1.0.0 (1). Data is stored on this device for now. Server
           sync ships with the Wallet pass work.
         </Text>
-        <TouchableOpacity accessibilityRole="button" activeOpacity={0.85} style={styles.linkButton}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          activeOpacity={0.85}
+          onPress={() => onOpenLegal("privacy")}
+          style={styles.linkButton}
+        >
           <Text style={styles.linkButtonText}>Privacy policy</Text>
         </TouchableOpacity>
-        <TouchableOpacity accessibilityRole="button" activeOpacity={0.85} style={styles.linkButton}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          activeOpacity={0.85}
+          onPress={() => onOpenLegal("terms")}
+          style={styles.linkButton}
+        >
+          <Text style={styles.linkButtonText}>Terms of use</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="button"
+          activeOpacity={0.85}
+          onPress={() => onOpenLegal("support")}
+          style={styles.linkButton}
+        >
           <Text style={styles.linkButtonText}>Support</Text>
         </TouchableOpacity>
       </View>

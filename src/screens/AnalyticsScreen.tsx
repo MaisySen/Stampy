@@ -1,11 +1,15 @@
+import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, shared, spacing, type } from "../theme";
-import type { BusinessState, StampMethod } from "../data";
+import type { BusinessState, Customer, StampMethod } from "../data";
+import { todayIso } from "../data";
+import { birthdayCustomers, daysBetween, lapsedCustomers } from "../lib/loyalty";
 import { BarChart } from "../components/BarChart";
 
 interface AnalyticsScreenProps {
   business: BusinessState;
+  customers: Customer[];
   onClear: () => void;
   onRestore: () => void;
 }
@@ -16,8 +20,22 @@ const METHOD_COLORS: Record<StampMethod, string> = {
   Staff: colors.peach,
 };
 
-export function AnalyticsScreen({ business, onClear, onRestore }: AnalyticsScreenProps) {
+export function AnalyticsScreen({
+  business,
+  customers,
+  onClear,
+  onRestore,
+}: AnalyticsScreenProps) {
+  const [sentIds, setSentIds] = useState<string[]>([]);
   const empty = business.stampsGiven === 0;
+  const today = todayIso();
+  const winback = lapsedCustomers(customers, today);
+  const birthdays = birthdayCustomers(customers, new Date());
+
+  function sendWinback(id: string) {
+    setSentIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }
+
   return (
     <View>
       <Text style={styles.title}>Analytics</Text>
@@ -94,6 +112,86 @@ export function AnalyticsScreen({ business, onClear, onRestore }: AnalyticsScree
         })}
       </View>
 
+      <View style={[shared.card, styles.listCard]}>
+        <Text style={shared.cardTitle}>Win-back</Text>
+        <Text style={[shared.cardMuted, styles.listSub]}>
+          Quiet for 30 days or more. One nudge each, only with a real offer.
+        </Text>
+        {winback.length === 0 ? (
+          <Text style={[shared.cardMuted, styles.emptySub]}>
+            No one needs a win-back right now. Everyone has visited in the
+            last 30 days.
+          </Text>
+        ) : (
+          winback.map((c) => {
+            const quietDays = daysBetween(c.lastVisit, today);
+            const sent = sentIds.includes(c.id);
+            return (
+              <View key={c.id} style={styles.listRow}>
+                <View style={styles.listIcon}>
+                  <Ionicons name="person-outline" size={18} color={colors.text} />
+                </View>
+                <View style={styles.listText}>
+                  <Text style={styles.listName}>{c.name}</Text>
+                  <Text style={styles.listTime}>
+                    {c.visits} visits, quiet for {quietDays} days
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: sent }}
+                  activeOpacity={0.85}
+                  disabled={sent}
+                  onPress={() => sendWinback(c.id)}
+                  style={[styles.nudgeButton, sent && styles.nudgeButtonSent]}
+                >
+                  <Text style={styles.nudgeButtonText}>
+                    {sent ? "Sent" : "Send nudge"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })
+        )}
+      </View>
+
+      <View style={[shared.card, styles.listCard]}>
+        <Text style={shared.cardTitle}>Birthdays this month</Text>
+        <Text style={[shared.cardMuted, styles.listSub]}>
+          A free treat lands on their card on the day.
+        </Text>
+        {birthdays.length === 0 ? (
+          <Text style={[shared.cardMuted, styles.emptySub]}>
+            No birthdays this month. New birthdays will list here.
+          </Text>
+        ) : (
+          birthdays.map((c) => {
+            const isToday =
+              c.birthdayDay === new Date().getDate();
+            return (
+              <View key={c.id} style={styles.listRow}>
+                <View style={styles.listIcon}>
+                  <Ionicons name="gift-outline" size={18} color={colors.text} />
+                </View>
+                <View style={styles.listText}>
+                  <Text style={styles.listName}>{c.name}</Text>
+                  <Text style={styles.listTime}>
+                    {isToday
+                      ? "Birthday today"
+                      : `Birthday on day ${c.birthdayDay} of this month`}
+                  </Text>
+                </View>
+                <View style={styles.birthdayPill}>
+                  <Text style={styles.birthdayPillText}>
+                    {isToday ? "Today" : `Day ${c.birthdayDay}`}
+                  </Text>
+                </View>
+              </View>
+            );
+          })
+        )}
+      </View>
+
       <View style={[shared.card, styles.recentCard]}>
         <Text style={shared.cardTitle}>Recent stamps</Text>
         {business.recent.length === 0 ? (
@@ -134,6 +232,17 @@ export function AnalyticsScreen({ business, onClear, onRestore }: AnalyticsScree
 }
 
 const styles = StyleSheet.create({
+  birthdayPill: {
+    backgroundColor: colors.surface2,
+    borderRadius: spacing.radiusPill,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  birthdayPillText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
   chart: {
     marginTop: 16,
   },
@@ -185,6 +294,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: spacing.radiusInner,
     flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
     padding: 12,
   },
   heroStatLabel: {
@@ -196,6 +307,58 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     marginTop: 4,
+  },
+  listCard: {
+    gap: 4,
+    marginTop: spacing.gap,
+  },
+  listIcon: {
+    alignItems: "center",
+    backgroundColor: colors.surface2,
+    borderRadius: 999,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  listName: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  listRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    minHeight: spacing.touchMin,
+    paddingVertical: 8,
+  },
+  listSub: {
+    marginTop: 4,
+  },
+  listText: {
+    flex: 1,
+    gap: 2,
+  },
+  listTime: {
+    color: colors.muted,
+    ...type.caption,
+  },
+  nudgeButton: {
+    alignItems: "center",
+    backgroundColor: colors.lavender,
+    borderRadius: spacing.radiusPill,
+    justifyContent: "center",
+    minHeight: spacing.touchMin,
+    paddingHorizontal: 16,
+  },
+  nudgeButtonSent: {
+    backgroundColor: colors.surface2,
+    opacity: 0.7,
+  },
+  nudgeButtonText: {
+    color: colors.darkText,
+    fontSize: 13,
+    fontWeight: "700",
   },
   range: {
     backgroundColor: colors.surface2,
