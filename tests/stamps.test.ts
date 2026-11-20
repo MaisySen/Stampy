@@ -79,9 +79,9 @@ test("pass builder needs a label for an external link", () => {
 test("share slug is lower case with hyphens", () => {
   assert.equal(buildShareSlug("Corner Cafe"), "corner-cafe");
   assert.equal(buildShareSlug("  My  Cafe! "), "my-cafe");
-  assert.equal(buildShareSlug(""), "stampy");
+  assert.equal(buildShareSlug(""), "stampies");
 });
 
 test("share link uses the slug", () => {
-  assert.equal(buildShareLink("Corner Cafe"), "https://stampy.app/p/corner-cafe");
+  assert.equal(buildShareLink("Corner Cafe"), "https://stampies.app/p/corner-cafe");
 });
