@@ -62,7 +62,7 @@ export function openAppleUpdates({dbPath, origin, rootKey, signApple}) {
     CREATE INDEX IF NOT EXISTS wallet_reg_by_serial ON wallet_reg(serial);
     CREATE TABLE IF NOT EXISTS wallet_wake (device TEXT NOT NULL, serial TEXT NOT NULL, rev INTEGER NOT NULL, PRIMARY KEY(device,serial), FOREIGN KEY(device,serial) REFERENCES wallet_reg(device,serial) ON DELETE CASCADE);`);
   const tick=db.prepare('UPDATE wallet_rev SET n=n+1 WHERE key=1 AND n<999999999999999 RETURNING n');
-  const state=db.prepare('SELECT payload FROM wallet_pass WHERE serial=?');
+  const state=db.prepare('SELECT payload,rev FROM wallet_pass WHERE serial=?');
   const save=db.prepare('INSERT INTO wallet_pass(serial,payload,rev) VALUES(?,?,?) ON CONFLICT(serial) DO UPDATE SET payload=excluded.payload, rev=excluded.rev');
   const attached=db.prepare('SELECT 1 FROM wallet_reg WHERE device=? AND serial=?');
   const upreg=db.prepare('INSERT INTO wallet_reg(device,serial,push) VALUES(?,?,?) ON CONFLICT(device,serial) DO UPDATE SET push=excluded.push');
@@ -78,13 +78,27 @@ export function openAppleUpdates({dbPath, origin, rootKey, signApple}) {
   // Token encryption is authenticated against the exact hashed Apple device and pass, never logged.
   function seal(device,serial,push){ const iv=randomBytes(12), c=createCipheriv('aes-256-gcm',encKey,iv);c.setAAD(Buffer.from(`${device}:${serial}`));const ciphertext=Buffer.concat([c.update(push,'utf8'),c.final()]);return Buffer.concat([iv,c.getAuthTag(),ciphertext]); }
   function open(device,serial,blob){const b=Buffer.from(blob),c=createDecipheriv('aes-256-gcm',encKey,b.subarray(0,12));c.setAAD(Buffer.from(`${device}:${serial}`));c.setAuthTag(b.subarray(12,28));return Buffer.concat([c.update(b.subarray(28)),c.final()]).toString('utf8');}
-  const getPass=(serial)=>{const row=state.get(serial);return row?JSON.parse(row.payload):null;};
-  function putPass(record) {
-    if (!record || typeof record.passId!=='string' || !opaque.test(record.passId)) throw new Error('Invalid pass ID.');
-    const payload=JSON.stringify(record);
+  const getPass=(serial)=>{
+    const row=state.get(serial);if(!row)return null;
+    const {_walletSourceVersion,...visible}=JSON.parse(row.payload);return visible;
+  };
+  function putPass(record,{sourceVersion}={}) {
+    if (!record || typeof record.passId!=='string' || !opaque.test(record.passId) || Object.hasOwn(record,'_walletSourceVersion') ||
+        (sourceVersion!==undefined && (!Number.isSafeInteger(sourceVersion) || sourceVersion<1))) throw new Error('Invalid pass update record.');
+    const value=JSON.stringify(record);
+    const payload=sourceVersion===undefined?value:JSON.stringify({...record,_walletSourceVersion:sourceVersion});
     if (Buffer.byteLength(payload)>limit*8) throw new Error('Pass record too large.');
     return transaction(()=>{
-      if(state.get(record.passId)?.payload===payload) return false;
+      const prior=state.get(record.passId);
+      if(prior?.payload===payload) return false;
+      if(prior){
+        const {_walletSourceVersion,...visible}=JSON.parse(prior.payload);
+        if(_walletSourceVersion!==undefined && sourceVersion===undefined)throw new Error('Unversioned pass update refused.');
+        if(_walletSourceVersion!==undefined && sourceVersion<_walletSourceVersion)return false;
+        const sameVisible=JSON.stringify(visible)===value;
+        if(_walletSourceVersion!==undefined && sourceVersion===_walletSourceVersion && !sameVisible) throw new Error('Conflicting pass source version.');
+        if(sameVisible){save.run(record.passId,payload,prior.rev);return false;}
+      }
       const version=tick.get()?.n;if(version===undefined) throw new Error('Wallet update counter exhausted.');
       save.run(record.passId,payload,version);queue.run(version,record.passId);return true;
     });
