@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, shared, spacing, type } from "../theme";
 import { DEMO_STAFF_CODE, STAMPS_TO_REWARD } from "../data";
 import type { StampMethod } from "../data";
+import { QrCode } from "../components/QrCode";
 
 type Method = StampMethod;
 type FlowState = "idle" | "done";
@@ -19,16 +20,6 @@ const METHODS: Array<{ key: Method; label: string; hint: string; icon: IconName 
   { key: "NFC", label: "Tap", hint: "Hold your phone to the counter tag", icon: "wifi-outline" },
   { key: "QR", label: "Scan", hint: "Scan the code at the counter", icon: "qr-code-outline" },
   { key: "Staff", label: "Staff", hint: "Staff add the stamp for you", icon: "person-outline" },
-];
-
-const QR_PATTERN = [
-  [1, 1, 1, 0, 1, 1, 1],
-  [1, 0, 1, 0, 1, 0, 1],
-  [1, 1, 1, 0, 1, 1, 1],
-  [0, 0, 0, 1, 0, 0, 0],
-  [1, 0, 1, 1, 0, 1, 0],
-  [0, 1, 0, 0, 1, 0, 1],
-  [1, 1, 0, 1, 0, 1, 1],
 ];
 
 export function StampScreen({ stamps, staffCode, onStamp }: StampScreenProps) {
@@ -104,18 +95,7 @@ export function StampScreen({ stamps, staffCode, onStamp }: StampScreenProps) {
 
       {method === "QR" && (
         <View style={[shared.card, styles.flow]}>
-          <View style={styles.qr}>
-            {QR_PATTERN.map((row, r) => (
-              <View key={`qr-row-${r}`} style={styles.qrRow}>
-                {row.map((cell, c) => (
-                  <View
-                    key={`qr-${r}-${c}`}
-                    style={[styles.qrCell, cell === 1 && styles.qrCellOn]}
-                  />
-                ))}
-              </View>
-            ))}
-          </View>
+          <QrCode size={126} />
           <Text style={shared.cardTitle}>Scan at the counter</Text>
           <Text style={[shared.cardMuted, styles.flowSub]}>
             Code STAMPY-4821. The code changes each day at the counter.
@@ -249,21 +229,6 @@ const styles = StyleSheet.create({
     color: colors.darkText,
     fontSize: 15,
     fontWeight: "700",
-  },
-  qr: {
-    backgroundColor: colors.white,
-    borderRadius: spacing.radiusInner,
-    padding: 14,
-  },
-  qrCell: {
-    height: 18,
-    width: 18,
-  },
-  qrCellOn: {
-    backgroundColor: colors.darkText,
-  },
-  qrRow: {
-    flexDirection: "row",
   },
   staffCode: {
     color: colors.text,
