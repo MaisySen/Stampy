@@ -32,6 +32,17 @@ Birthday treat: if the customer shares a birthday when they join, Stampy sends a
 
 Readable analytics: stamps given, customers who visited, stamps over time, split by NFC tap, QR code, and staff. No 40 chart dashboard.
 
+## Pass builder
+
+A business builds its own pass in the app, in four steps.
+
+1. Details: business name, reward text, stamp target with 9 as the default.
+2. Design: brand colour, cover style, optional business photo URL.
+3. Links: menu link, Wi-Fi name and password, feedback link, one external link with a label. All optional, all clearable.
+4. Preview and publish: a live phone preview titled Building your pass. The photo is front and centre. The stamp count shows big as 0/9. A QR code adds the pass to Wallet. The pass is marked Powered by Stampy.
+
+Publish shows the share link and QR code. The customer needs no app download. Every pass keeps the Stampy differentiators: Wallet pass, NFC tap, QR code and staff stamp, nearby nudge, birthday reward, and business analytics.
+
 ## Screens
 
 1. Customer Wallet card. Stamp grid, progress to reward, barcode, nearby nudge, birthday card.
@@ -44,6 +55,9 @@ Readable analytics: stamps given, customers who visited, stamps over time, split
 8. Business Campaigns. Nearby nudge, birthday treat, win-back message.
 9. Business Program setup. Reward rule, card design, stamp methods, toggles.
 10. Business Settings. Business details, legal line, data clear, version.
+11. Pass builder, Details and Design. Business name, reward text, stamp target, brand colour, cover style, photo URL.
+12. Pass builder, Links. Menu, Wi-Fi, feedback, and one external link.
+13. Pass builder, Preview and publish. Live phone preview, big 0/9 stamp count, QR code, Powered by Stampy, publish and share.
 
 ## Roadmap
 
@@ -129,6 +143,14 @@ Release:
 27. Ship a TestFlight internal build.
 28. Ship a Play internal track build.
 29. Publish store listings and privacy pages.
+
+Pass builder:
+
+30. Build the four step builder: Details, Design, Links, Preview.
+31. Build the live phone preview with photo, big 0/9 count, and QR code.
+32. Add the publish step with share link and QR code.
+33. Keep the Powered by Stampy mark on every pass.
+34. Check the builder on phone width: spacing, alignment, touch targets.
 
 ## Decisions
 

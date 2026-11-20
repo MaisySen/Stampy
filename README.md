@@ -24,9 +24,15 @@ Business side:
 3. See stamps given, customers who visited, and stamps over time.
 4. Send a nearby nudge when a customer is close, and a birthday treat on their birthday.
 
+## Pass builder
+
+A business builds its own pass in four steps: Details, Design, Links, Preview. Details are the business name, reward text, and stamp target, with 9 as the default. Design is the brand colour, cover style, and an optional business photo. Links are the menu, Wi-Fi, feedback, and one external link. All fields are business made, optional where marked, and clearable. The Preview step shows a live phone preview titled Building your pass, with the photo front and centre, the stamp count big as 0/9, and a QR code to add the pass to Wallet. Publish shows the share link and QR code. The customer needs no app download to add the pass. Every pass is marked Powered by Stampy.
+
 ## What is in this repo
 
-- `App.tsx` and `src/`: the Expo app. Customer Wallet card, stamp flow, business Analytics, and program settings.
+- `App.tsx` and `src/`: the Expo app. Customer Wallet card, stamp flow, business Analytics, program settings, and the pass builder.
+- `src/components/PassPreview.tsx`: the live phone preview for a pass, with the photo, stamp count, QR code, and Powered by Stampy mark.
+- `src/screens/PassBuilderScreen.tsx`: the four step pass builder, Details, Design, Links, Preview and publish.
 - `docs/PLAN.md`: the full plan, condensed.
 - `docs/DECISIONS.md`: the 5 open decisions and their recommendations.
 - `docs/RELEASES.md`: build records. `CHANGELOG.md`: what changed per version.
@@ -72,7 +78,7 @@ Copy `.env.example` to `.env` and fill in values for your environment. Never com
 
 ## MVP scope
 
-MVP is: Wallet pass creation, QR and staff stamping, reward redemption, basic analytics, birthday reward, and the business dashboard. NFC tap, nearby nudges, win-back campaigns, and multi-location support come in V2. See `docs/PLAN.md`.
+MVP is: Wallet pass creation, the pass builder, QR and staff stamping, reward redemption, basic analytics, birthday reward, and the business dashboard. NFC tap, nearby nudges, win-back campaigns, and multi-location support come in V2. See `docs/PLAN.md`.
 
 ## Privacy
 
