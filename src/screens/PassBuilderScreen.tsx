@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, shared, spacing, type } from "../theme";
+import { suggestedReward } from "../lib/stamps";
 import { BRAND_COLORS, COVERS, PassPreview, passSlug } from "../components/PassPreview";
 import type { PassDraft } from "../components/PassPreview";
 
@@ -60,6 +61,21 @@ export function PassBuilderScreen({
 
   function set<K extends keyof PassDraft>(key: K, value: PassDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
+  }
+
+  // Changing the target follows the reward along only while the reward
+  // is still empty or still the suggestion for the old target. A reward
+  // the business typed stays exactly as typed.
+  function changeTarget(next: number) {
+    setDraft((prev) => ({
+      ...prev,
+      target: next,
+      reward:
+        prev.reward.trim().length === 0 ||
+        prev.reward === suggestedReward(prev.target)
+          ? suggestedReward(next)
+          : prev.reward,
+    }));
   }
 
   function clearAll() {
@@ -163,7 +179,7 @@ export function PassBuilderScreen({
             <TextInput
               accessibilityLabel="Reward text"
               onChangeText={(v) => set("reward", v)}
-              placeholder="Buy 8, get the 9th free"
+              placeholder={suggestedReward(draft.target)}
               placeholderTextColor={colors.faint}
               style={styles.input}
               value={draft.reward}
@@ -175,7 +191,7 @@ export function PassBuilderScreen({
                 accessibilityRole="button"
                 activeOpacity={0.85}
                 disabled={draft.target <= MIN_TARGET}
-                onPress={() => set("target", draft.target - 1)}
+                onPress={() => changeTarget(draft.target - 1)}
                 style={[styles.stepperButton, draft.target <= MIN_TARGET && styles.stepperButtonDisabled]}
               >
                 <Text style={styles.stepperButtonText}>-</Text>
@@ -186,14 +202,15 @@ export function PassBuilderScreen({
                 accessibilityRole="button"
                 activeOpacity={0.85}
                 disabled={draft.target >= MAX_TARGET}
-                onPress={() => set("target", draft.target + 1)}
+                onPress={() => changeTarget(draft.target + 1)}
                 style={[styles.stepperButton, draft.target >= MAX_TARGET && styles.stepperButtonDisabled]}
               >
                 <Text style={styles.stepperButtonText}>+</Text>
               </TouchableOpacity>
             </View>
             <Text style={styles.hint}>
-              9 is the default. Most cafes use 8 to 10.
+              Each business sets its own buy count and reward. 9 is the
+              usual default.
             </Text>
           </View>
         )}

@@ -7,6 +7,15 @@ export const STAMP_TARGET_DEFAULT = 9;
 export const STAMP_TARGET_MIN = 4;
 export const STAMP_TARGET_MAX = 12;
 
+/**
+ * Default reward suggestion for a stamp target.
+ * Targets only run 4 to 12, so every ordinal in that range is "th".
+ * Each business sets its own buy count and reward. This is only the suggestion.
+ */
+export function suggestedReward(target: number): string {
+  return `Buy ${target - 1}, get the ${target}th free`;
+}
+
 export interface StampProgress {
   stamps: number;
   target: number;

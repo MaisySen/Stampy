@@ -2,7 +2,7 @@
 import test from "node:test";
 // @ts-ignore - no @types/node in this repo; tests run on compiled JS.
 import assert from "node:assert/strict";
-import { buildShareLink, buildShareSlug, stampProgress, validatePassBuilder } from "../src/lib/stamps.js";
+import { buildShareLink, buildShareSlug, stampProgress, suggestedReward, validatePassBuilder } from "../src/lib/stamps.js";
 
 test("stamp progress counts stamps left and percent", () => {
   const p = stampProgress(5, 9);
@@ -26,6 +26,12 @@ test("stamp progress starts at zero", () => {
   const p = stampProgress(0, 9);
   assert.equal(p.stampsLeft, 9);
   assert.equal(p.percent, 0);
+});
+
+test("suggested reward follows the stamp target", () => {
+  assert.equal(suggestedReward(9), "Buy 8, get the 9th free");
+  assert.equal(suggestedReward(4), "Buy 3, get the 4th free");
+  assert.equal(suggestedReward(12), "Buy 11, get the 12th free");
 });
 
 test("pass builder accepts a valid draft", () => {

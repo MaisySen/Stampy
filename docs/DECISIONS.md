@@ -1,6 +1,6 @@
 # Stampies decisions
 
-Five open decisions. Each has a recommendation. Nothing here is decided until it is logged at the bottom.
+Five decisions. D2 is decided. D1, D3 and D4 remain open. Nothing here is decided until it is logged at the bottom.
 
 ## D1. First vertical
 
@@ -14,9 +14,9 @@ Status: Open.
 
 Question: what does a full card earn?
 
-Recommendation: buy 8, get the 9th free. One rule, easy to explain at the counter, easy to show on the card.
+Decision: no fixed rule. Buy count and reward are adjustable per business, because it depends on the business. Each business sets its own buy count and reward in the pass builder. The default suggestion stays buy 8, get the 9th free.
 
-Status: Open.
+Status: Decided 2026-11-21, in Bidur's words: buy and rewards must be adjustable because it depends on the business.
 
 ## D3. Stamp methods at launch
 
@@ -47,6 +47,7 @@ Status: Decided. Expo with TypeScript. Decided 2026-11-20, at the start of this 
 | Date | Decision | What was decided | Why |
 | --- | --- | --- | --- |
 | 2026-11-20 | D5 Platform | Expo with TypeScript, EAS Build and Update | One codebase for iOS and Android, matches the runbook OTA path |
+| 2026-11-21 | D2 Reward rule | No fixed rule. Each business sets its own buy count and reward in the pass builder, default suggestion buy 8, get the 9th free | Buy and rewards depend on the business |
 
 ## Phase note, 2026-11-20
 
