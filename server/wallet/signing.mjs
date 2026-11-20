@@ -30,8 +30,11 @@ function record(input, now) {
 
 // Configuration and mounted PEM paths are supplied ONLY by the signing service operator.
 // Use the official Apple trust root and matching WWDR certificate, not the App Store Connect key.
-export function createAppleSigner({ teamIdentifier, certificatePath, privateKeyPath, intermediatePath, rootPath, assets }) {
+export function createAppleSigner({ teamIdentifier, certificatePath, privateKeyPath, intermediatePath, rootPath, assets, appleUpdates = null }) {
   if (!/^[A-Z0-9]{10}$/.test(teamIdentifier ?? '')) throw new Error('Invalid Apple Wallet signing configuration.');
+  if (appleUpdates !== null && (typeof appleUpdates.tokenFor !== 'function' || !(appleUpdates.url instanceof URL) || appleUpdates.url.protocol !== 'https:' || appleUpdates.url.username || appleUpdates.url.password || appleUpdates.url.search || appleUpdates.url.hash)) throw new Error('Invalid Apple Wallet update configuration.');
+  const updatesURL = appleUpdates?.url.href;
+  const tokenFor = appleUpdates?.tokenFor;
   const signer = new X509Certificate(readFileSync(certificatePath));
   const intermediate = new X509Certificate(readFileSync(intermediatePath));
   const root = new X509Certificate(readFileSync(rootPath));
@@ -49,6 +52,12 @@ export function createAppleSigner({ teamIdentifier, certificatePath, privateKeyP
     const { program, stamps, options } = record(trustedRecord, now);
     const p = buildApplePass(program, stamps, options);
     p.teamIdentifier = teamIdentifier;
+    if (updatesURL) {
+      const authToken = tokenFor(p.serialNumber);
+      if (typeof authToken !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(authToken)) throw new Error('Invalid Apple Wallet update token.');
+      p.webServiceURL = updatesURL;
+      p.authenticationToken = authToken;
+    }
     p.backgroundColor = 'rgb(' + p.backgroundColor.slice(1).match(/../g).map((x) => Number.parseInt(x, 16)).join(', ') + ')';
     p.barcodes = [p.barcode];
     if (p.expirationDate) p.expirationDate = `${p.expirationDate}T23:59:59` + zonedOffset(p.expirationDate, trustedRecord.timeZone);
