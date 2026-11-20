@@ -97,7 +97,7 @@ export function PassPreview({ draft, stamps = 0 }: PassPreviewProps) {
           <QrCode size={110} />
         </View>
         <Text style={styles.scanHint}>Scan to add the pass to Wallet</Text>
-        <Text style={styles.powered}>Powered by Stampy</Text>
+        <Text style={styles.powered}>Powered by Stampies</Text>
       </View>
     </View>
   );

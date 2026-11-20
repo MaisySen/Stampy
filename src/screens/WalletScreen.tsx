@@ -137,7 +137,7 @@ export function WalletScreen({
 
       <Text style={styles.privacy}>
         Your card only knows where the business is. Your phone works out when
-        you are nearby, on the device. Stampy does not track you live.
+        you are nearby, on the device. Stampies does not track you live.
       </Text>
     </View>
   );

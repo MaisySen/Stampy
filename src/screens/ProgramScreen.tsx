@@ -131,9 +131,9 @@ export function ProgramScreen({
       </View>
 
       <View style={[shared.card, styles.aboutCard]}>
-        <Text style={shared.cardTitle}>About Stampy</Text>
+        <Text style={shared.cardTitle}>About Stampies</Text>
         <Text style={styles.aboutText}>
-          Stampy is provided by Fintex Australia Pty Ltd (ABN 60 688 406
+          Stampies is provided by Fintex Australia Pty Ltd (ABN 60 688 406
           108), New South Wales, Australia. Contact: contact@fintex.au.
         </Text>
         <Text style={styles.aboutText}>

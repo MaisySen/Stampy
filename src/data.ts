@@ -1,5 +1,5 @@
 /**
- * Local data for Stampy.
+ * Local data for Stampies.
  * This is demo data for one business. It lives on the device.
  * The business can clear it from the Analytics screen.
  * Server sync ships with the Wallet pass work.

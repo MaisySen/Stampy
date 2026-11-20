@@ -18,12 +18,12 @@ const TITLES: Record<LegalPage, string> = {
 const SECTIONS: Record<LegalPage, Array<{ title: string; body: string }>> = {
   privacy: [
     {
-      title: "What Stampy collects",
+      title: "What Stampies collects",
       body: "As little as possible. A card holds the business name, the reward, and the stamp count. A dashboard holds stamp counts and visit counts. No login is needed, and no account is created.",
     },
     {
       title: "Location",
-      body: "A Wallet card only knows where the business is. The phone works out when the customer is nearby, on the device. Stampy does not track a customer live.",
+      body: "A Wallet card only knows where the business is. The phone works out when the customer is nearby, on the device. Stampies does not track a customer live.",
     },
     {
       title: "Data on the device",
@@ -31,12 +31,12 @@ const SECTIONS: Record<LegalPage, Array<{ title: string; body: string }>> = {
     },
     {
       title: "Ads",
-      body: "No ads are shown in Stampy.",
+      body: "No ads are shown in Stampies.",
     },
   ],
   terms: [
     {
-      title: "What Stampy is",
+      title: "What Stampies is",
       body: "A digital loyalty card for small businesses. Add a card to Wallet, earn stamps at the counter, and redeem a reward when the card is full.",
     },
     {
@@ -103,7 +103,7 @@ export function LegalScreen({ page, onClose }: LegalScreenProps) {
         <View style={[shared.card, styles.legalCard]}>
           <Text style={shared.cardTitle}>Fintex Australia Pty Ltd</Text>
           <Text style={[shared.cardMuted, styles.sectionBody]}>
-            Stampy is provided by Fintex Australia Pty Ltd (ABN 60 688 406
+            Stampies is provided by Fintex Australia Pty Ltd (ABN 60 688 406
             108), New South Wales, Australia. Contact: contact@fintex.au.
             Website: https://fintex.au
           </Text>

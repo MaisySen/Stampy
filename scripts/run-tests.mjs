@@ -1,5 +1,5 @@
 /**
- * Run the Stampy unit tests.
+ * Run the Stampies unit tests.
  * Compiles the pure logic modules and the tests with tsc, then runs
  * node --test on the compiled output. No network, no device.
  * Exits non-zero if the compile or any test fails.

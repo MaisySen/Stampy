@@ -56,7 +56,7 @@ export function PassBuilderScreen({
   const [externalUrl, setExternalUrl] = useState("");
 
   const slug = passSlug(draft.businessName);
-  const shareLink = `https://stampy.app/p/${slug}`;
+  const shareLink = `https://stampies.app/p/${slug}`;
 
   function set<K extends keyof PassDraft>(key: K, value: PassDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -83,7 +83,7 @@ export function PassBuilderScreen({
 
   async function sharePass() {
     await Share.share({
-      message: `Add my Stampy pass: ${shareLink}`,
+      message: `Add my Stampies pass: ${shareLink}`,
     });
   }
 

@@ -96,9 +96,9 @@ export function buildShareSlug(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return slug.length === 0 ? "stampy" : slug;
+  return slug.length === 0 ? "stampies" : slug;
 }
 
 export function buildShareLink(name: string): string {
-  return `https://stampy.app/p/${buildShareSlug(name)}`;
+  return `https://stampies.app/p/${buildShareSlug(name)}`;
 }

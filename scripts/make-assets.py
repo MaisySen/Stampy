@@ -1,4 +1,4 @@
-"""Make Stampy app icon and splash art. No secrets. No network.
+"""Make Stampies app icon and splash art. No secrets. No network.
 Run from the repo root: python3 scripts/make-assets.py
 Writes assets/icon.png and assets/splash.png.
 """

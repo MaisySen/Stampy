@@ -1,7 +1,7 @@
 import { StyleSheet } from "react-native";
 
 /**
- * Orbix theme for Stampy.
+ * Orbix theme for Stampies.
  * Dark near-black background. Soft lavender, pink, peach gradient.
  * Huge numerals. Rounded 24 to 28px cards. Generous spacing.
  */
