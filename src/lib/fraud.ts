@@ -8,6 +8,14 @@
  * - Daily limit: 1 stamp per pass per business per calendar day.
  */
 
+import {
+  DeviceHistory,
+  deviceFlagMessage,
+  type DeviceCheckResult,
+} from "./device.js";
+
+export type { DeviceCheckResult } from "./device.js";
+
 export const STAFF_PIN_LENGTH = 4;
 export const STAMP_COOLDOWN_SECONDS = 60;
 export const STAMPS_PER_DAY = 1;
@@ -62,4 +70,23 @@ export function blockMessage(check: StampCheck): string {
     return `Please wait ${check.waitSeconds} seconds before the next stamp.`;
   }
   return "";
+}
+
+/**
+ * Device check hook for stamping. Records the stamp device in the
+ * given history and returns the device flag result. PIN, cooldown,
+ * and daily limit behaviour is unchanged, callers decide what to
+ * do with a flagged device.
+ */
+export function checkStampDevice(
+  history: DeviceHistory,
+  passId: string,
+  deviceId: string,
+  nowMs: number,
+): DeviceCheckResult {
+  return history.check(passId, deviceId, nowMs);
+}
+
+export function deviceBlockMessage(result: DeviceCheckResult): string {
+  return deviceFlagMessage(result);
 }

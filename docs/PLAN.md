@@ -101,7 +101,7 @@ Churn: small businesses stop paying if they see no return. Answer: show stamps a
 
 ## Build checklist
 
-Status at 2026-11-20, after the rename to Stampies. 23 of 34 done, 3 partial, 8 open. A partial item has its UI flow done and its server or hardware part still open. The phase was pushed as bcb67cb and 3291cfa. The repo is at 11 commits, head 3291cfa.
+Status at 2026-11-20, after the rename to Stampies. The rename is done. 23 of 34 done, 3 partial, 8 open. A partial item has its UI flow done and its server or hardware part still open. The rename commits were f2951ad, ad6b537, 189b517, and 47029f9. The repo is at 15 commits, head 47029f9. Parallel work is in this push: Wallet pass payload builder and install flow, offline stamp queue, and fraud device check. 81 tests pass 0 fail, typecheck exit 0, scan passed. Wallet items 6 to 10 are still open. Offline queue item 15 is still open. Pass signing is server work, offline queue is in memory only, device check is a flag only, PassInstall screen is not yet wired into App.tsx.
 
 Product:
 
