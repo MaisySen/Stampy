@@ -1,1 +1,27 @@
-{"build":{"development":{"channel":"preview","developmentClient":true,"distribution":"internal"},"preview":{"channel":"preview","distribution":"internal"},"production":{"channel":"production"}},"cli":{"appVersionSource":"local","version":">= 16.0.0"},"submit":{"production":{}},"update":{"url":"https://u.expo.dev/00000000-0000-0000-0000-000000000000"}}
+{
+  "build": {
+    "development": {
+      "channel": "preview",
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "channel": "preview",
+      "distribution": "internal"
+    },
+    "production": {
+      "channel": "production"
+    }
+  },
+  "cli": {
+    "appVersionSource": "local",
+    "version": ">= 16.0.0"
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6837253268"
+      }
+    }
+  }
+}

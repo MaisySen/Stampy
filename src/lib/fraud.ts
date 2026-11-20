@@ -12,9 +12,9 @@ import {
   DeviceHistory,
   deviceFlagMessage,
   type DeviceCheckResult,
-} from "./device.js";
+} from "./device";
 
-export type { DeviceCheckResult } from "./device.js";
+export type { DeviceCheckResult } from "./device";
 
 export const STAFF_PIN_LENGTH = 4;
 export const STAMP_COOLDOWN_SECONDS = 60;
