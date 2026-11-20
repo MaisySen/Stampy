@@ -70,7 +70,8 @@ export function openAppleUpdates({dbPath, origin, rootKey, signApple}) {
   const changes=db.prepare('SELECT wallet_pass.serial, rev FROM wallet_reg JOIN wallet_pass USING(serial) WHERE device=? AND rev>? ORDER BY rev, wallet_pass.serial');
   const queue=db.prepare('INSERT INTO wallet_wake(device,serial,rev) SELECT device,serial,? FROM wallet_reg WHERE serial=? ON CONFLICT(device,serial) DO UPDATE SET rev=excluded.rev');
   const ready=db.prepare('SELECT wallet_wake.device, wallet_wake.serial, wallet_wake.rev, push FROM wallet_wake JOIN wallet_reg USING(device,serial) ORDER BY wallet_wake.rev LIMIT ?');
-  const ack=db.prepare('DELETE FROM wallet_wake WHERE device=? AND serial=? AND rev=?');
+  const ack=db.prepare('DELETE FROM wallet_wake WHERE device=? AND serial=? AND rev=? AND EXISTS (SELECT 1 FROM wallet_reg WHERE wallet_reg.device=wallet_wake.device AND wallet_reg.serial=wallet_wake.serial AND push=?)');
+  const removeStaleReg=db.prepare('DELETE FROM wallet_reg WHERE device=? AND serial=? AND push=?');
   const transaction=(f)=>{
     db.exec('BEGIN IMMEDIATE'); try{ const x=f();db.exec('COMMIT');return x; } catch(e){db.exec('ROLLBACK');throw e;}
   };
@@ -123,8 +124,10 @@ export function openAppleUpdates({dbPath, origin, rootKey, signApple}) {
     let sent=0;
     for(const row of ready.all(max)){
       const status=await sendWake({topic:PASS_TYPE_IDENTIFIER,pushToken:open(row.device,row.serial,row.push)});
-      if(status==='accepted'){ack.run(row.device,row.serial,row.rev);sent++;}
-      // A conservative retry keeps failed or ambiguous deliveries queued; caller uses a bounded cadence.
+      if(status==='accepted'){ack.run(row.device,row.serial,row.rev,row.push);sent++;}
+      if(status==='unregistered')removeStaleReg.run(row.device,row.serial,row.push);
+      // Both updates compare the encrypted registration snapshot. A concurrent registration or
+      // a newer revision stays queued. Other failures are retained for retry by a bounded dispatcher.
     }
     return sent;
   }

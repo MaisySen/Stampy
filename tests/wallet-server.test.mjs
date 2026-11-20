@@ -1,4 +1,6 @@
 import { test } from 'node:test';
+import { EventEmitter } from 'node:events';
+import { sendAppleWalletWake, createAppleWalletPushSender } from '../server/wallet/apple-push.mjs';
 import assert from 'node:assert/strict';
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -123,4 +125,63 @@ test('Apple Wallet refresh and push state survives restart and follows exact pas
   assert.equal((await call(reopened,register,'DELETE',{auth:token})).status,200);
   assert.equal(await reopened.sendPending(async()=>assert.fail('No wake after unregister')),0);
   assert.equal((await call(reopened,list)).status,204);
+});
+
+
+test('Apple push sender uses a minimal exact-topic APNs request and only concludes clean provider results', async () => {
+  const topic = 'pass.au.fintex.stampies', pushToken = 'Ab'.repeat(32);
+  function session(status, answer, {never = false, aborted = false, broken = false} = {}) {
+    const capture = { opened: false, cancelled: false };
+    const socket = { request(headers) {
+      capture.opened = true; capture.headers = headers;
+      if (broken) throw new Error('synthetic transport error');
+      const stream = new EventEmitter();
+      stream.end = (body) => {
+        capture.body = body.toString();
+        if (!never) queueMicrotask(() => {
+          stream.emit('response',{':status':status});
+          if (aborted) return stream.emit('aborted');
+          if (answer) stream.emit('data', Buffer.from(answer));
+          stream.emit('end'); stream.emit('close');
+        });
+      };
+      stream.close = () => { capture.cancelled = true; stream.emit('close'); };
+      return stream;
+    }};
+    return [socket,capture];
+  }
+  const [good,sent] = session(200);
+  assert.equal(await sendAppleWalletWake(good,{topic,pushToken},{now:10_000}), 'accepted');
+  assert.deepEqual(sent.headers, {':method':'POST',':path':`/3/device/${pushToken.toLowerCase()}`,'apns-topic':topic,'apns-priority':'5','apns-expiration':'3610','content-type':'application/json','content-length':'2'});
+  assert.equal(sent.body,'{}');
+  assert.equal(await sendAppleWalletWake(good,{topic:'not.the.pass',pushToken}), 'retry');
+  const [bad, badCapture] = session(200);
+  assert.equal(await sendAppleWalletWake(bad,{topic,pushToken:'bad/token'}),'retry');
+  assert.equal(badCapture.opened,false);
+  for (const [status,body,expected,behavior] of [
+    [400,'{"reason":"BadDeviceToken"}','retry'],[410,'{"reason":"Unregistered"}','unregistered'],
+    [410,'"broken"','retry'],[429,'','retry'],[503,'','retry'],[200,'','retry',{aborted:true}],
+    [200, 'x'.repeat(1025),'retry'],[200,'','retry',{broken:true}],
+  ]) assert.equal(await sendAppleWalletWake(session(status,body,behavior)[0],{topic,pushToken}),expected);
+  const [silent,nothing] = session(200,null,{never:true});
+  assert.equal(await sendAppleWalletWake(silent,{topic,pushToken},{timeoutMs:12}),'retry');
+  assert.equal(nothing.cancelled,true);
+  assert.throws(()=>createAppleWalletPushSender({teamIdentifier:'FIXTURE123'}),/did not verify/);
+});
+
+test('Only a definite invalid token deletes its unchanged Apple registration; a re-registration wins', async (t) => {
+  const origin='https://wallet.example', rootKey=Buffer.alloc(32,11);
+  const api=openAppleUpdates({origin,rootKey,dbPath:':memory:',signApple:()=>Buffer.alloc(0)});
+  t.after(()=>api.close());
+  const token=appleUpdateIdentity({origin,rootKey}).tokenFor(passId);
+  const list=`${origin}/v1/devices/fixture_device_alfa/registrations/pass.au.fintex.stampies`;
+  const reg=(pushToken)=>api.handle(new Request(`${list}/${passId}`,{method:'POST',headers:{Authorization:`ApplePass ${token}`,'Content-Type':'application/json'},body:JSON.stringify({pushToken})}));
+  const original='ab'.repeat(32), next='ed'.repeat(32), last='cd'.repeat(32);
+  api.putPass(record); assert.equal((await reg(original)).status,201); api.putPass({...record,stamps:4});
+  assert.equal(await api.sendPending(async d=>{assert.equal(d.pushToken,original);assert.equal((await reg(next)).status,200);return 'unregistered';}),0);
+  assert.equal(await api.sendPending(async d=>{assert.equal(d.pushToken,next);assert.equal((await reg(last)).status,200);return 'accepted';}),1);
+  assert.equal(await api.sendPending(async d=>{assert.equal(d.pushToken,last);return 'retry';}),0);
+  assert.equal(await api.sendPending(async d=>{assert.equal(d.pushToken,last);return 'unregistered';}),0);
+  assert.equal(await api.sendPending(async()=>assert.fail('Invalid registration must leave no wake')),0);
+  assert.equal((await api.handle(new Request(list))).status,204);
 });
