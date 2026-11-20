@@ -77,4 +77,79 @@ export const emptyBusiness: BusinessState = {
   recent: [],
 };
 
-export const BIRTHDAY_DAYS_TO_GO = 12;
+export const BIRTHDAY_DAYS_TO_GO = 5;
+
+export interface Customer {
+  id: string;
+  name: string;
+  visits: number;
+  lastVisit: string;
+  birthdayMonth: number;
+  birthdayDay: number;
+}
+
+function isoDaysAgo(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function todayIso(): string {
+  return isoDaysAgo(0);
+}
+
+/**
+ * Demo customers. Dates are relative to today, so the win-back list
+ * stays true as time passes. One customer lapsed 45 days ago, one has
+ * a birthday this month. The business can clear this data.
+ */
+export const demoCustomers: Customer[] = [
+  {
+    id: "c1",
+    name: "Maya",
+    visits: 12,
+    lastVisit: isoDaysAgo(2),
+    birthdayMonth: new Date().getMonth() + 1,
+    birthdayDay: new Date().getDate(),
+  },
+  {
+    id: "c2",
+    name: "Jordan",
+    visits: 7,
+    lastVisit: isoDaysAgo(5),
+    birthdayMonth: ((new Date().getMonth() + 3) % 12) + 1,
+    birthdayDay: 14,
+  },
+  {
+    id: "c3",
+    name: "Priya",
+    visits: 9,
+    lastVisit: isoDaysAgo(45),
+    birthdayMonth: ((new Date().getMonth() + 6) % 12) + 1,
+    birthdayDay: 3,
+  },
+  {
+    id: "c4",
+    name: "Tom",
+    visits: 4,
+    lastVisit: isoDaysAgo(38),
+    birthdayMonth: ((new Date().getMonth() + 9) % 12) + 1,
+    birthdayDay: 21,
+  },
+];
+
+export const emptyCustomers: Customer[] = [];
+
+/**
+ * Demo customer birthday for the Wallet screen. Five days from today,
+ * kept inside the current month, so the birthday reward card shows.
+ */
+export const DEMO_BIRTHDAY: { month: number; day: number } = (() => {
+  const today = new Date();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const day = Math.min(today.getDate() + BIRTHDAY_DAYS_TO_GO, daysInMonth);
+  return { month: today.getMonth() + 1, day };
+})();

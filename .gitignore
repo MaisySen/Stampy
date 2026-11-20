@@ -8,3 +8,4 @@ dist/
 assets/*.png
 ios/
 android/
+.test-out/
