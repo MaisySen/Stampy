@@ -1,1 +1,51 @@
-{"expo":{"android":{"adaptiveIcon":{"backgroundColor":"#0A0A0F","foregroundImage":"./assets/icon.png"},"package":"au.fintex.stampies","versionCode":1},"extra":{"eas":{"projectId":"00000000-0000-0000-0000-000000000000"}},"icon":"./assets/icon.png","ios":{"buildNumber":"1","bundleIdentifier":"au.fintex.stampies","infoPlist":{"ITSAppUsesNonExemptEncryption":false},"supportsTablet":false},"name":"Stampies","newArchEnabled":true,"orientation":"portrait","scheme":"stampies","slug":"stampies","splash":{"backgroundColor":"#0A0A0F","image":"./assets/splash.png","resizeMode":"cover"},"userInterfaceStyle":"dark","version":"1.0.0","web":{"favicon":"./assets/icon.png"}}}
+{
+  "expo": {
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0F",
+        "foregroundImage": "./assets/icon.png"
+      },
+      "package": "au.fintex.stampies",
+      "versionCode": 1
+    },
+    "icon": "./assets/icon.png",
+    "ios": {
+      "buildNumber": "1",
+      "bundleIdentifier": "au.fintex.stampies",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "supportsTablet": false
+    },
+    "name": "Stampies",
+    "newArchEnabled": true,
+    "orientation": "portrait",
+    "scheme": "stampies",
+    "slug": "stampies",
+    "splash": {
+      "backgroundColor": "#0A0A0F",
+      "image": "./assets/splash.png",
+      "resizeMode": "cover"
+    },
+    "userInterfaceStyle": "dark",
+    "version": "1.0.0",
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/6b763cc2-7374-441c-bb17-04c5c4b7710c"
+    },
+    "owner": "multiesexpo",
+    "extra": {
+      "eas": {
+        "projectId": "6b763cc2-7374-441c-bb17-04c5c4b7710c"
+      }
+    }
+  }
+}
