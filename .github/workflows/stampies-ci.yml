@@ -2,9 +2,6 @@ name: Stampies CI
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - review/stampies-build16-20261122
 
 permissions:
   contents: read

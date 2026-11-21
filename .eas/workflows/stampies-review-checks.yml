@@ -37,9 +37,24 @@ jobs:
             tests/wallet-stamp-intake.test.mjs \
             tests/wallet-google-updates.test.mjs \
             tests/wallet-push-worker.test.mjs
-          python3 -m venv .ci-python
-          .ci-python/bin/python -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes --no-deps -r scripts/requirements-ci.txt
-          .ci-python/bin/python scripts/make-assets.py
+          # Use only a hash-pinned Pillow wheel; no system pip or virtual environment.
+          asset_dir="$(mktemp -d)"
+          trap 'rm -rf "$asset_dir"' EXIT
+          case "$(python3 -c 'import platform, sys; print(f"{platform.machine()}:{sys.version_info.major}.{sys.version_info.minor}")')" in
+            x86_64:3.10)
+              pillow_url='https://files.pythonhosted.org/packages/4e/89/36f4cd76cf4baf05c50ababb976249153f18c959171c7f6ba09a6f217260/pillow-12.3.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl'
+              pillow_sha='f0606c8bf2cdefea14a43530f7657cbbb7ecf1c4222512492ef4a4434a9501ec'
+              ;;
+            x86_64:3.11)
+              pillow_url='https://files.pythonhosted.org/packages/3b/2d/ede717bc1144f63886c21fd349bb95860b0d1a21149ff16f2bb362b612b6/pillow-12.3.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl'
+              pillow_sha='23d27a3e0307ec2244cc51e7287b919aa68d097504ebe19df4e76a98a3eea5bd'
+              ;;
+            *) printf '%s\n' 'The CI image Python version or CPU needs an explicitly pinned Pillow wheel.' >&2; exit 1 ;;
+          esac
+          curl --proto '=https' --proto-redir '=https' -fsSL --max-time 35 "$pillow_url" -o "$asset_dir/pillow.whl"
+          printf '%s  %s\n' "$pillow_sha" "$asset_dir/pillow.whl" | sha256sum --check --status
+          python3 -m zipfile -e "$asset_dir/pillow.whl" "$asset_dir/lib"
+          PYTHONPATH="$asset_dir/lib" python3 -s scripts/make-assets.py
           node scripts/check-ci-config.mjs
           ./node_modules/.bin/expo export --platform ios --max-workers 2 --output-dir dist/ci-ios
           ./node_modules/.bin/expo export --platform android --max-workers 2 --output-dir dist/ci-android
