@@ -1,0 +1,45 @@
+name: Stampies review checks
+defaults:
+  tools:
+    node: '22.23.2'
+on:
+  workflow_dispatch: {}
+  push:
+    branches: ['review/stampies-build16-20261122']
+concurrency:
+  group: stampies-review-ci
+  cancel_in_progress: true
+permissions:
+  account:
+    role: runner
+jobs:
+  checks:
+    name: App, Wallet and bundle checks
+    environment: preview
+    env:
+      CI: '1'
+      EXPO_OFFLINE: '1'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - uses: eas/checkout
+      - name: Verify and export both platforms
+        run: |
+          set -eu
+          node -e "if (Number(process.versions.node.split('.')[0]) < 22) process.exit(1)"
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run scan
+          node --experimental-sqlite --test \
+            tests/wallet-server.test.mjs \
+            tests/wallet-service.test.mjs \
+            tests/wallet-http.test.mjs \
+            tests/wallet-stamp-intake.test.mjs \
+            tests/wallet-google-updates.test.mjs \
+            tests/wallet-push-worker.test.mjs
+          python3 -m venv .ci-python
+          .ci-python/bin/python -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes --no-deps -r scripts/requirements-ci.txt
+          .ci-python/bin/python scripts/make-assets.py
+          node scripts/check-ci-config.mjs
+          ./node_modules/.bin/expo export --platform ios --max-workers 2 --output-dir dist/ci-ios
+          ./node_modules/.bin/expo export --platform android --max-workers 2 --output-dir dist/ci-android
