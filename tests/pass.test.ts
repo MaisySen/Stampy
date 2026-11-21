@@ -8,6 +8,7 @@ import {
   buildPassPayloads,
   isPassExpired,
   passRewardState,
+  passShareLink,
   passStateLabel,
   updatePassOnStamp,
   validatePassProgram,
@@ -25,6 +26,11 @@ function program(overrides: Partial<PassProgram> = {}): PassProgram {
     ...overrides,
   };
 }
+
+test("pass share link uses the business slug", () => {
+  assert.equal(passShareLink("Corner Cafe"), "https://stampies.app/p/corner-cafe");
+  assert.equal(passShareLink("  "), "https://stampies.app/p/stampies");
+});
 
 test("pass program accepts a valid program", () => {
   assert.deepEqual(validatePassProgram(program()), []);

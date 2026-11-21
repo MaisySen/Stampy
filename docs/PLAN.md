@@ -77,7 +77,7 @@ No login and no ads for now. No hard coded popular content. Lists are user made 
 
 ## Store
 
-App Store record, for the main Tab to create. Name Stampies. Language English (Australia). Bundle ID au.fintex.stampies. SKU stampies-ios-1. Platform iOS. Full Access. The main Tab returns the numeric Apple ID after it creates the record. The Admin App Store Connect API key goes in repo secrets, not in chat. The EAS project ID is still the zero placeholder in app.json and eas.json. The Google Play service account key is still needed for this Tab. The CI workflow file did not land in the repo. GitHub returned 403 Resource not accessible by integration. The file stays local at .github/workflows/ci.yml until it can be added on github.com.
+App Store record, for the main Tab to create. Name Stampies. Language English (Australia). Bundle ID au.fintex.stampies. SKU stampies-ios-1. Platform iOS. Full Access. The main Tab returns the numeric Apple ID after it creates the record. The Admin App Store Connect API key goes in repo secrets, not in chat. The EAS project ID is still the zero placeholder in app.json and eas.json. The Google Play service account key is still needed for this Tab. The Stampies CI workflow is on main, with the SQLite flag for the Wallet server tests.
 
 ## Pricing
 
@@ -101,7 +101,7 @@ Churn: small businesses stop paying if they see no return. Answer: show stamps a
 
 ## Build checklist
 
-Status at 2026-11-20, after the rename to Stampies. The rename is done. 23 of 34 done, 3 partial, 8 open. A partial item has its UI flow done and its server or hardware part still open. The rename commits were f2951ad, ad6b537, 189b517, and 47029f9. The repo is at 15 commits, head 47029f9. Parallel work is in this push: Wallet pass payload builder and install flow, offline stamp queue, and fraud device check. 81 tests pass 0 fail, typecheck exit 0, scan passed. Wallet items 6 to 10 are still open. Offline queue item 15 is still open. Pass signing is server work, offline queue is in memory only, device check is a flag only, PassInstall screen is not yet wired into App.tsx.
+Status at 2026-11-21. The repo is at 21 commits, head ea9df79. 23 of 34 done, 4 partial, 7 open. A partial item has its UI flow done and its server or hardware part still open. Build 6 merged the Stampies CI workflow, commit 92c0dd5, with Apple ID 6837253268 in eas.json. The Node 22 SQLite flag for the Wallet server tests was added on github.com in commit ea9df79, so the CI workflow is complete on main. Build 7 merged server Wallet signing, commit 89eb1d1, with 4 Wallet server tests. Build 8 merged the Apple Wallet APNs update service, commit 5880257, with 7 Wallet server tests. D2 is decided: buy count and reward are adjustable per business, default suggestion buy 8, get the 9th free, implemented in commit 367cd53. Pass Type ID pass.au.fintex.stampies is registered and verified, 2026-11-21. 83 app tests pass 0 fail, 7 Wallet server tests pass 0 fail, typecheck exit 0, scan passed, config check exit 0, Android bundle 6.0M and iOS bundle 6.0M, both exit 0. Wallet items 6, 7, 9 and 10 are still open. Item 8 is partial: the Add to Wallet screen is wired into App.tsx, and the real Wallet call is server work. Offline queue item 15 is still open. Pass signing is server code only, offline queue is in memory only, device check is a flag only. Apple standard Wallet certificate is already issued. Still needed for a real pass: mount the certificate and key on the server, with the WWDR intermediate and trust root, plus server-owned icon artwork, a hosted backend, a Google issuer class, and a physical install and update test.
 
 Product:
 
@@ -115,7 +115,7 @@ Wallet:
 
 - [ ] 6. Design the Apple Wallet pass.
 - [ ] 7. Design the Google Wallet pass.
-- [ ] 8. Build the pass install flow.
+- [~] 8. Build the pass install flow. Add to Wallet screen is wired into App.tsx from the Wallet screen. The real Wallet call is server work.
 - [ ] 9. Update the pass on each stamp.
 - [ ] 10. Handle pass expiry and reward state.
 

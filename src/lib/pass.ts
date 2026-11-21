@@ -33,6 +33,19 @@ export const PASS_TYPE_IDENTIFIER = "pass.au.fintex.stampies";
 export const PASS_TARGET_MIN = 4;
 export const PASS_TARGET_MAX = 12;
 
+export function businessSlug(businessName: string): string {
+  return businessName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function passShareLink(businessName: string): string {
+  const slug = businessSlug(businessName);
+  return `https://stampies.app/p/${slug.length > 0 ? slug : "stampies"}`;
+}
+
 function isValidDateIso(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
@@ -278,11 +291,7 @@ export function buildGooglePass(
   });
   const googleState =
     state === "expired" ? "EXPIRED" : state === "redeemed" ? "INACTIVE" : "ACTIVE";
-  const slug = program.businessName
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const slug = businessSlug(program.businessName);
   const payload: GooglePassPayload = {
     id: `stampies-${slug}-${program.barcodeValue.trim()}`,
     classId: "stampies-loyalty-class",
@@ -307,7 +316,7 @@ export function buildGooglePass(
     linksModuleData: {
       uris: [
         {
-          uri: `https://stampies.app/p/${slug.length > 0 ? slug : "stampies"}`,
+          uri: passShareLink(program.businessName),
           description: "Open your Stampies pass page",
           id: "pass-page",
         },
