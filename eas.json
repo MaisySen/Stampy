@@ -1,21 +1,23 @@
 {
   "build": {
     "development": {
-      "channel": "preview",
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "environment": "development"
     },
     "preview": {
       "channel": "preview",
-      "distribution": "internal"
+      "distribution": "internal",
+      "environment": "preview"
     },
     "production": {
-      "channel": "production"
+      "channel": "production",
+      "environment": "production"
     }
   },
   "cli": {
     "appVersionSource": "local",
-    "version": ">= 16.0.0"
+    "version": "27.11.0"
   },
   "submit": {
     "production": {
