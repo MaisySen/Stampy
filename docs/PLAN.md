@@ -77,11 +77,11 @@ No login and no ads for now. No hard coded popular content. Lists are user made 
 
 ## Store
 
-App Store record, for the main Tab to create. Name Stampies. Language English (Australia). Bundle ID au.fintex.stampies. SKU stampies-ios-1. Platform iOS. Full Access. The main Tab returns the numeric Apple ID after it creates the record. The Admin App Store Connect API key goes in repo secrets, not in chat. The EAS project ID is still the zero placeholder in app.json and eas.json. The Google Play service account key is still needed for this Tab. The Stampies CI workflow is on main, with the SQLite flag for the Wallet server tests.
+App Store record is done. Name Stampies. Language English (Australia). Bundle ID au.fintex.stampies. SKU stampies-ios-1. Platform iOS. Full Access. Apple ID 6837253268, in eas.json on main. The Admin App Store Connect API key is confirmed, 2026-11-21. The EAS project ID is 6b763cc2-7374-441c-bb17-04c5c4b7710c, in app.json and eas.json on main, with preview and production channels separate. The Google Play service account key is still needed for this Tab, but Google work is held for now. The Stampies CI workflow is on main, with the SQLite flag for the Wallet server tests.
 
 ## Pricing
 
-Monthly per location, one paid tier to start, free trial. No charge per stamp. Businesses hate unpredictable bills. Confirm the amount in docs/DECISIONS.md.
+A$39 ex GST per location per month, one flat plan, everything included. Free trial for one month. No charge per stamp. Extra locations A$25 to A$30 ex GST each. Annual billing minus 20 percent. Businesses hate unpredictable bills. Decided in docs/DECISIONS.md, 2026-11-21.
 
 ## Go to market, first 10 Sydney businesses
 
@@ -99,9 +99,20 @@ Apple and Google pass rules: passes can be rejected or limited. Answer: follow t
 
 Churn: small businesses stop paying if they see no return. Answer: show stamps and repeat visits in the first week.
 
-## Build checklist
+## Next phase plan
 
-Status at 2026-11-21. The repo is at 21 commits, head ea9df79. 23 of 34 done, 4 partial, 7 open. A partial item has its UI flow done and its server or hardware part still open. Build 6 merged the Stampies CI workflow, commit 92c0dd5, with Apple ID 6837253268 in eas.json. The Node 22 SQLite flag for the Wallet server tests was added on github.com in commit ea9df79, so the CI workflow is complete on main. Build 7 merged server Wallet signing, commit 89eb1d1, with 4 Wallet server tests. Build 8 merged the Apple Wallet APNs update service, commit 5880257, with 7 Wallet server tests. D2 is decided: buy count and reward are adjustable per business, default suggestion buy 8, get the 9th free, implemented in commit 367cd53. Pass Type ID pass.au.fintex.stampies is registered and verified, 2026-11-21. 83 app tests pass 0 fail, 7 Wallet server tests pass 0 fail, typecheck exit 0, scan passed, config check exit 0, Android bundle 6.0M and iOS bundle 6.0M, both exit 0. Wallet items 6, 7, 9 and 10 are still open. Item 8 is partial: the Add to Wallet screen is wired into App.tsx, and the real Wallet call is server work. Offline queue item 15 is still open. Pass signing is server code only, offline queue is in memory only, device check is a flag only. Apple standard Wallet certificate is already issued. Still needed for a real pass: mount the certificate and key on the server, with the WWDR intermediate and trust root, plus server-owned icon artwork, a hosted backend, a Google issuer class, and a physical install and update test.
+Decided in advance. Nothing here comes back to Bidur as a question. The only asks from Bidur are the ones only he can do: tap the GitHub approval card when it appears, his accounts, his PC steps, and money.
+
+1. Runtime-scope merge lands. In flight. It needs only the approval card tap.
+2. One batched push, no decision needed: the Apple push worker, the Postgres push scheduler, dead wake cleanup, offline queue persistence, and the docs (decisions, Admin key note, worker and scheduler sections, release rows). The only ask is the approval card tap.
+3. Wire App.tsx to the offline store at startup, and wire the runtime-role verifier into Wallet service startup. Both are small, already decided.
+4. First EAS preview build. Needs the Expo token confirmed and the three EAS environments existing. That is the main Tab track. Verify from this side what can be verified, then build.
+5. Live backend deploy, then the physical install and update test on a real pass. Main Tab track for the deploy, this side for the test.
+6. Google work stays held. TestFlight follows the preview build. Play follows Google being unheld.
+
+Decision rule for this project: when a review says yes, merge without asking. When a review says no, report what must change. Ask Bidur only when the choice needs his money, his accounts, or his PC.
+
+Status at 2026-11-21. The repo is at 25 commits, head a193411. 23 of 34 done, 4 partial, 7 open. A partial item has its UI flow done and its server or hardware part still open. Build 6 merged the Stampies CI workflow, commit 92c0dd5, with Apple ID 6837253268 in eas.json. The Node 22 SQLite flag for the Wallet server tests was added on github.com in commit ea9df79, so the CI workflow is complete on main. Build 7 merged server Wallet signing, commit 89eb1d1, with 4 Wallet server tests. Build 8 merged the Apple Wallet APNs update service, commit 5880257, with 7 Wallet server tests. D2 is decided: buy count and reward are adjustable per business, default suggestion buy 8, get the 9th free, implemented in commit 367cd53. Pass Type ID pass.au.fintex.stampies is registered and verified, 2026-11-21. 89 app tests pass 0 fail, 7 Wallet server tests pass 0 fail, typecheck exit 0, scan passed, config check exit 0, Android bundle 6.0M and iOS bundle 6.0M, both exit 0. The Postgres Wallet service and the durable wake queue are on main in commit b62770f. The EAS project link is on main in commit 9c64486. The restricted Wallet database role is on main in commit a193411. Built locally, not yet pushed: the Apple push worker, the Postgres push scheduler, dead wake cleanup, and offline queue persistence. Wallet items 6, 7, 9 and 10 are still open. Item 8 is partial: the Add to Wallet screen is wired into App.tsx, and the real Wallet call is server work. Item 15 is partial: offline queue persistence is built locally with AsyncStorage, and the app is not yet wired to the store in App.tsx. Pass signing is server code only, device check is a flag only. Apple standard Wallet certificate is already issued. Still needed for a real pass: mount the certificate and key on the server, with the WWDR intermediate and trust root, plus server-owned icon artwork, a hosted backend, a Google issuer class, and a physical install and update test.
 
 Product:
 
@@ -125,7 +136,7 @@ Stamp:
 - [x] 12. Build the QR scan flow.
 - [x] 13. Build the staff stamp with PIN.
 - [~] 14. Add fraud controls: cooldown, daily limit, device check. Cooldown, daily limit, and staff PIN are wired into the stamp flow. Device check is still open.
-- [ ] 15. Add an offline stamp queue.
+- [~] 15. Add an offline stamp queue. Queue and persistence store are built locally with AsyncStorage. The app is not yet wired to the store in App.tsx.
 
 Analytics:
 
@@ -160,4 +171,4 @@ Pass builder:
 
 ## Decisions
 
-See docs/DECISIONS.md. Five open decisions with recommendations, and a log of what was decided.
+See docs/DECISIONS.md. All five decisions are decided: D1 all business types, D2 per-business adjustable rewards, D3 all stamp methods, D4 A$39 per location per month, D5 Expo with TypeScript.
