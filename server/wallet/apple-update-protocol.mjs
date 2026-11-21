@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { PASS_TYPE_IDENTIFIER } from '../../src/lib/pass.ts';
 
-const opaque = /^[A-Za-z0-9_-]{22,80}$/;
+const opaque = /^[A-Za-z0-9_-]{8,80}$/;
 const deviceId = /^[A-Za-z0-9_-]{16,128}$/;
 const pushId = /^(?:[0-9a-f]{2}){16,128}$/i;
 const limit = 1024 * 2;

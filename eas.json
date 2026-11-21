@@ -8,11 +8,17 @@
     "preview": {
       "channel": "preview",
       "distribution": "internal",
-      "environment": "preview"
+      "environment": "preview",
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.0"
+      }
     },
     "production": {
       "channel": "production",
-      "environment": "production"
+      "environment": "production",
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.0"
+      }
     }
   },
   "cli": {

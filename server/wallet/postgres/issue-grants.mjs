@@ -1,5 +1,9 @@
 const hex = /^[a-f0-9]{64}$/;
-const id = /^[A-Za-z0-9_-]{22,80}$/;
+// Owner ids stay 22 to 80 characters. Serial is a pass id, 8 to 80,
+// the same rule as the stamp intake and the stamp ledger. The app
+// sends pass ids like stampies-corner-cafe, which the 22 floor rejected.
+const ownerId = /^[A-Za-z0-9_-]{22,80}$/;
+const serialId = /^[A-Za-z0-9_-]{8,80}$/;
 const paths = new Set(['/wallet/apple', '/wallet/google']);
 const positiveClock = (x) => Number.isSafeInteger(x) && x >= 0;
 
@@ -28,7 +32,7 @@ export function openPostgresIssueGrants({pool}) {
   return Object.freeze({
     async insertWithinCap({digest,owner,serial,path,expires,now}) {
       if (closed) return false;
-      if (!hex.test(digest) || !id.test(owner) || !id.test(serial) || !paths.has(path) ||
+      if (!hex.test(digest) || !ownerId.test(owner) || !serialId.test(serial) || !paths.has(path) ||
           !positiveClock(now) || !positiveClock(expires) || expires - now !== 90) {
         throw new Error('Invalid Wallet grant.');
       }

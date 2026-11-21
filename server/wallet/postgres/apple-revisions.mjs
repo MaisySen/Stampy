@@ -1,5 +1,5 @@
 import { walletPgTransaction } from './issue-grants.mjs';
-const serialPattern=/^[A-Za-z0-9_-]{22,80}$/;
+const serialPattern=/^[A-Za-z0-9_-]{8,80}$/;
 const maxRevision=999999999999999;
 const validSerial=(s)=>typeof s==='string' && serialPattern.test(s);
 

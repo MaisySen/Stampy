@@ -7,9 +7,15 @@ import { createStampIntakeHandler } from './stamp-intake.mjs';
 import { openSqliteStampLedger } from './stamp-ledger.mjs';
 
 const routes = new Map([['apple', '/wallet/apple'], ['google', '/wallet/google']]);
-const opaque = /^[A-Za-z0-9_-]{22,80}$/;
+// Owner ids stay 22 to 80 characters. Pass ids are 8 to 80: the app
+// sends pass ids like stampies-corner-cafe, and the stamp intake and
+// stamp ledger already accept 8 to 80. The 22 floor used to reject
+// those ids, so mint and the pass refresh never ran for a real pass.
+const ownerIdPattern = /^[A-Za-z0-9_-]{22,80}$/;
+const passIdPattern = /^[A-Za-z0-9_-]{8,80}$/;
 const digestPattern = /^[a-f0-9]{64}$/;
-const validId = (x) => typeof x === 'string' && opaque.test(x);
+const validOwnerId = (x) => typeof x === 'string' && ownerIdPattern.test(x);
+const validPassId = (x) => typeof x === 'string' && passIdPattern.test(x);
 const tokenDigest = (x) => createHash('sha256').update(x).digest('hex');
 const state = (row, passId) => {
   if (!Number.isSafeInteger(row?.version) || row.version < 1 || row.record?.passId !== passId) return null;
@@ -19,13 +25,14 @@ const response = (status) => new Response(null, {status,headers:{'Cache-Control'
 
 // The core accepts asynchronous persistence while keeping the existing SQLite API.
 // The injected adapters are private server code, not request input.
-export function createWalletService({origin, apple, google, lookupOwnedPass, now = Date.now, grantStore, stampStore, openUpdates}) {
+export function createWalletService({origin, apple, google, lookupOwnedPass, now = Date.now, grantStore, stampStore, openUpdates, googleUpdates}) {
   const url = new URL(origin);
   if (url.protocol !== 'https:' || url.href !== `${url.origin}/` || typeof lookupOwnedPass !== 'function' ||
       typeof now !== 'function' || (google !== undefined && typeof google !== 'function') ||
       !['insertWithinCap','claim','close'].every((k) => typeof grantStore?.[k] === 'function') ||
-      (stampStore !== undefined && !['record','count'].every((k) => typeof stampStore?.[k] === 'function')) ||
-      (apple !== undefined && typeof openUpdates !== 'function')) throw new Error('Invalid Wallet service configuration.');
+      (stampStore !== undefined && !['record','count','find'].every((k) => typeof stampStore?.[k] === 'function')) ||
+      (apple !== undefined && typeof openUpdates !== 'function') ||
+      (googleUpdates !== undefined && (typeof googleUpdates.loadCommittedPass !== 'function' || typeof googleUpdates.updateObject !== 'function'))) throw new Error('Invalid Wallet service configuration.');
   let passStore, sender;
   if (apple !== undefined) {
     if (typeof apple.makeSigner !== 'function' || typeof apple.loadCommittedPass !== 'function' ||
@@ -48,7 +55,7 @@ export function createWalletService({origin, apple, google, lookupOwnedPass, now
   let closed=false, flushing=null;
   async function mint({ownerId,passId,platform}) {
     const path=routes.get(platform);
-    if (closed || !validId(ownerId) || !validId(passId) || !path ||
+    if (closed || !validOwnerId(ownerId) || !validPassId(passId) || !path ||
         (platform==='apple'&&!apple) || (platform==='google'&&!google)) return null;
     if (!state(await lookupOwnedPass({ownerId,passId,platform}),passId) || closed) return null;
     const t=seconds();
@@ -86,20 +93,36 @@ export function createWalletService({origin, apple, google, lookupOwnedPass, now
     return response(404);
   }
   async function committedAppleChange(passId) {
-    if (closed || !apple || !validId(passId)) return false;
+    if (closed || !apple || !validPassId(passId)) return false;
     const row=state(await apple.loadCommittedPass(passId),passId);
     if (!row || closed) return false;
     return passStore.putPass(row.record,{sourceVersion:row.version});
+  }
+  // Google has no push. The committed record is PUT to the Google
+  // Wallet API, and every device that saved the pass refreshes from
+  // Google. Returns false when Google updates are not configured or
+  // the pass is unknown, otherwise the updater status: updated,
+  // not-found, denied, or retry.
+  async function committedGoogleChange(passId) {
+    if (closed || !googleUpdates || !validPassId(passId)) return false;
+    const row=state(await googleUpdates.loadCommittedPass(passId),passId);
+    if (!row || closed) return false;
+    return googleUpdates.updateObject(row.record);
   }
   // Stamp intake needs the committed merchant ledger to verify the pass
   // and business, and the Apple update path to queue the pass refresh.
   // Without either, POST /wallet/stamps answers 503. The stamp itself is
   // recorded first; the refresh is best effort and never fails the stamp.
+  // A recorded stamp refreshes both wallets: Apple through the wake
+  // queue, Google through the Wallet API.
   const stampIntake = (stampStore && apple) ? createStampIntakeHandler({
     stampStore,
     loadCommittedPass: apple.loadCommittedPass,
     now,
-    onRecorded: (passId) => committedAppleChange(passId).catch(() => {}),
+    onRecorded: (passId) => {
+      committedAppleChange(passId).catch(() => {});
+      committedGoogleChange(passId).catch(() => {});
+    },
   }) : null;
   // Call from one bounded scheduler. Overlapping calls share the same flight.
   const flushAppleWakes=()=>{
@@ -114,7 +137,7 @@ export function createWalletService({origin, apple, google, lookupOwnedPass, now
     try { sender?.close(); await flushing; }
     finally { try { await passStore?.close(); } finally { await grantStore.close(); } }
   }
-  return Object.freeze({mint,handle,committedAppleChange,flushAppleWakes,close});
+  return Object.freeze({mint,handle,committedAppleChange,committedGoogleChange,flushAppleWakes,close});
 }
 
 // Only the authenticated application may call mint. No public mint or stamp endpoint.

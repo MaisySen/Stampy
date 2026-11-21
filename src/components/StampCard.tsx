@@ -2,18 +2,37 @@ import { StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, gradientHero, spacing, type } from "../theme";
 import { STAMPS_TO_REWARD } from "../data";
+import type { PassState } from "../lib/pass";
+import { passStateLabel } from "../lib/pass";
 
 interface StampCardProps {
   businessName: string;
   stamps: number;
   reward: string;
+  passState?: PassState;
 }
 
 const BAR_WIDTHS = [3, 1, 4, 2, 1, 3, 2, 4, 1, 2, 3, 1, 4, 2, 1, 3, 2, 4, 1, 2];
 
-export function StampCard({ businessName, stamps, reward }: StampCardProps) {
+export function StampCard({
+  businessName,
+  stamps,
+  reward,
+  passState = "active",
+}: StampCardProps) {
   const filled = Math.min(stamps, STAMPS_TO_REWARD);
   const dots = Array.from({ length: STAMPS_TO_REWARD }, (_, i) => i < filled);
+  // The pill names the pass state. A full card says Reward ready, a
+  // claimed card says Reward claimed, an expired card says Pass
+  // expired. An active card keeps the plain Stamps label. The count
+  // check stays as a fallback, so a full card still reads as ready
+  // even when no state is passed in.
+  const pillText =
+    passState === "redeemed" || passState === "expired"
+      ? passStateLabel(passState)
+      : filled >= STAMPS_TO_REWARD
+        ? "Reward ready"
+        : "Stamps";
   return (
     <LinearGradient
       colors={gradientHero}
@@ -28,9 +47,7 @@ export function StampCard({ businessName, stamps, reward }: StampCardProps) {
           <Text style={styles.countTotal}> / {STAMPS_TO_REWARD}</Text>
         </Text>
         <View style={styles.rewardPill}>
-          <Text style={styles.rewardPillText}>
-            {filled >= STAMPS_TO_REWARD ? "Reward ready" : "Stamps"}
-          </Text>
+          <Text style={styles.rewardPillText}>{pillText}</Text>
         </View>
       </View>
       <Text style={styles.reward}>{reward}</Text>

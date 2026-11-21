@@ -12,7 +12,7 @@ One pass per business. The customer adds it once. Stamps update on the pass afte
 ## Apple Wallet pass
 
 Pass type: store card. A store card is the Apple type for a loyalty card.
-Pass type identifier: pass.au.fintex.stampies.
+Pass type identifier: pass.au.fintex.stampies. Registered and verified, 2026-11-21.
 Organization name: Fintex Australia Pty Ltd.
 Team identifier: set by the server at signing time. It is a placeholder in local code.
 Serial number: the customer pass id. One serial per customer per business.
@@ -25,10 +25,13 @@ Label colour: white.
 ### Apple fields, field by field
 
 Primary field: stamps. Label is STAMPS. Value is the count and the target, for example 5 of 9.
+Primary field: stamp grid. Label is STAMP GRID. Value is one filled dot per stamp earned and one empty dot per stamp left, for example five filled dots and four empty dots for 5 of 9. The grid on the pass matches the dot row in the app.
 Secondary field: reward. Label is REWARD. Value is the reward text, for example Buy 8, get the 9th free.
 Auxiliary field: to go. Label is TO GO. Value is the stamps left, for example 4 stamps to go. When the card is full, the value is Reward ready.
 Back field: status. Label is STATUS. Value is one of Collecting stamps, Reward ready, Reward claimed, Pass expired.
 Back field: cover. Label is COVER. Value is the cover style name from the pass builder.
+Back field: terms. Label is TERMS. Value is the pass terms: one stamp per visit, one visit per day, the reward is the free item shown on the card, and the pass cannot be used after its expiry date.
+Back field: powered by. Label is POWERED BY. Value is Powered by Stampies.
 Back field: privacy. Label is PRIVACY. Value says the pass only knows where the business is, and the phone works out when the customer is nearby, on the device.
 Back field: publisher. Label is PUBLISHER. Value is Fintex Australia Pty Ltd.
 
@@ -46,10 +49,12 @@ The dot count always matches the stamp target. The target is 4 to 12, with 9 as 
 
 ### Apple reward state
 
+The four states come from one state machine in src/lib/pass.ts. The app, the pass payloads, and the server stamp intake all use it, so they always agree on the state.
 Active: stamps are below the target. The pass shows the count and the stamps left.
-Full: stamps have reached the target. The pass shows Reward ready. The customer shows the pass at the counter.
+Reward earned: stamps have reached the target. The pass shows Reward ready. The customer shows the pass at the counter.
 Redeemed: the reward was claimed. The pass shows Reward claimed. A new card starts at 0 stamps.
 Expired: today is past the expiry date. The pass is voided. The pass shows Pass expired.
+A stamp is only allowed while the pass is active. A stamp on an expired pass is refused. A stamp on a redeemed pass is refused. A stamp on a full card is refused: the card must be redeemed before a new card starts.
 
 ### Apple expiry
 
@@ -72,10 +77,14 @@ State: ACTIVE while collecting stamps. INACTIVE after the reward is claimed. EXP
 
 ### Google fields, field by field
 
+Text module: Business. Body is the business name.
 Loyalty points: label is Stamps. Balance is the count and the target, for example 5 of 9.
 Text module: Reward. Body is the reward text.
 Text module: To go. Body is the stamps left, or Reward ready when the card is full.
 Text module: Status. Body is one of Collecting stamps, Reward ready, Reward claimed, Pass expired.
+Text module: Stamp grid. Body is one filled dot per stamp earned and one empty dot per stamp left, the same grid as the Apple pass and the app.
+Text module: Terms. Body is the pass terms, the same as the Apple back field.
+Text module: Powered by. Body is Powered by Stampies.
 Link module: one link to the pass page at stampies.app/p, plus the business slug. Description is Open your Stampies pass page.
 
 ### Google barcode
@@ -90,10 +99,12 @@ The app shows the same count as a row of dots, the same as Apple.
 
 ### Google reward state
 
+The Google state follows the same state machine as Apple.
 Active: stamps are below the target. State is ACTIVE.
-Full: stamps have reached the target. State stays ACTIVE. The To go module says Reward ready.
+Reward earned: stamps have reached the target. State stays ACTIVE. The To go module says Reward ready.
 Redeemed: the reward was claimed. State is INACTIVE. A new card starts at 0 stamps.
 Expired: today is past the expiry date. State is EXPIRED.
+The same refusal rules apply: no stamp on an expired, redeemed, or full pass.
 
 ### Google expiry
 
@@ -110,11 +121,12 @@ The phone works out the distance on the device. Stampies does not track the cust
 ## Pass update on each stamp
 
 Each stamp builds a fresh payload for Apple and for Google.
-The new payload has the new stamp count, the new stamps left, and the new reward state.
+The new payload has the new stamp count, the new stamp grid, the new stamps left, and the new reward state.
 The server sends the new payload to the phone. The phone does not need to open the app.
 A full card flips to Reward ready on the next update.
 A redeemed card starts a new card at 0 stamps.
 An expired card stays expired.
+The stamp intake endpoint returns the state after the stamp, and refuses a stamp on an expired, redeemed, or full pass. The Wallet screen shows the four states distinctly: collecting, reward ready, reward claimed, and pass expired.
 
 ## Colours
 
@@ -125,4 +137,4 @@ The app uses the Orbix theme: dark near-black background, lavender, pink, and pe
 
 ## What is not in this round
 
-Real PassKit signing. Real Google Wallet signing. The server that sends pass updates. NFC hardware. App Store and Play store work. Those are blocked by the server and store work.
+Real PassKit signing. Real Google Wallet signing. The server that sends pass updates. NFC hardware. App Store and Play store work. Those are blocked by the server and store work. The payloads are final: every field above is built in code and tested.

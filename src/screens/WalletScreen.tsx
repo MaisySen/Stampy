@@ -4,6 +4,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, shared, spacing, type } from "../theme";
 import { DEMO_BIRTHDAY, STAMPS_TO_REWARD } from "../data";
 import { daysUntilBirthday, isBirthdayMonth, isBirthdayToday } from "../lib/loyalty";
+import { dayString } from "../lib/fraud";
+import { derivePassState } from "../lib/pass";
+import type { PassState } from "../lib/pass";
 import { StampCard } from "../components/StampCard";
 
 interface WalletScreenProps {
@@ -12,6 +15,9 @@ interface WalletScreenProps {
   stamps: number;
   onRedeem: () => void;
   onGoToStamp: () => void;
+  onAddToWallet?: () => void;
+  passState?: PassState;
+  expiryIso?: string;
 }
 
 export function WalletScreen({
@@ -20,9 +26,23 @@ export function WalletScreen({
   stamps,
   onRedeem,
   onGoToStamp,
+  onAddToWallet,
+  passState: passStateProp,
+  expiryIso,
 }: WalletScreenProps) {
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const rewardReady = stamps >= STAMPS_TO_REWARD;
+  // The four pass states show distinctly. The caller may pass the
+  // state in; otherwise it is derived from the stamp count and the
+  // expiry date, with the same rules as the server state machine.
+  const passState: PassState =
+    passStateProp ??
+    derivePassState({
+      stamps,
+      target: STAMPS_TO_REWARD,
+      expiryIso,
+      todayIso: dayString(new Date()),
+    });
+  const rewardReady = passState === "reward-earned";
   const stampsLeft = Math.max(0, STAMPS_TO_REWARD - stamps);
   const today = new Date();
   const birthdayToday = isBirthdayToday(DEMO_BIRTHDAY.month, DEMO_BIRTHDAY.day, today);
@@ -61,30 +81,75 @@ export function WalletScreen({
         </View>
       )}
 
-      <StampCard businessName={businessName} stamps={stamps} reward={reward} />
+      <StampCard
+        businessName={businessName}
+        stamps={stamps}
+        reward={reward}
+        passState={passState}
+      />
 
       <View style={[shared.card, styles.actionCard]}>
         <View>
           <Text style={shared.cardTitle}>
-            {rewardReady ? "Your reward is ready" : `${stampsLeft} more stamps to go`}
+            {passState === "reward-earned"
+              ? "Your reward is ready"
+              : passState === "redeemed"
+                ? "Reward claimed"
+                : passState === "expired"
+                  ? "This pass has expired"
+                  : `${stampsLeft} more stamps to go`}
           </Text>
           <Text style={[shared.cardMuted, styles.actionSub]}>
-            {rewardReady
+            {passState === "reward-earned"
               ? "Show this card at the counter to claim it."
-              : "One stamp per visit. One visit per day."}
+              : passState === "redeemed"
+                ? "Enjoy your free coffee. Your new card starts at 0 stamps."
+                : passState === "expired"
+                  ? expiryIso !== undefined
+                    ? `This card ended on ${expiryIso}. Ask at the counter for a new card.`
+                    : "This card has ended. Ask at the counter for a new card."
+                  : "One stamp per visit. One visit per day."}
           </Text>
         </View>
         <TouchableOpacity
           accessibilityRole="button"
+          accessibilityState={{ disabled: passState === "expired" }}
           activeOpacity={0.85}
-          onPress={rewardReady ? onRedeem : onGoToStamp}
-          style={[styles.actionButton, rewardReady && styles.actionButtonReady]}
+          disabled={passState === "expired"}
+          onPress={
+            passState === "reward-earned"
+              ? onRedeem
+              : passState === "expired"
+                ? undefined
+                : onGoToStamp
+          }
+          style={[
+            styles.actionButton,
+            rewardReady && styles.actionButtonReady,
+            passState === "expired" && styles.actionButtonDisabled,
+          ]}
         >
           <Text style={styles.actionButtonText}>
-            {rewardReady ? "Redeem" : "Get a stamp"}
+            {passState === "reward-earned"
+              ? "Redeem"
+              : passState === "expired"
+                ? "Expired"
+                : "Get a stamp"}
           </Text>
         </TouchableOpacity>
       </View>
+
+      {onAddToWallet !== undefined && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          activeOpacity={0.85}
+          onPress={onAddToWallet}
+          style={styles.addWalletButton}
+        >
+          <Ionicons name="wallet-outline" size={18} color={colors.darkText} />
+          <Text style={styles.addWalletButtonText}>Add to Wallet</Text>
+        </TouchableOpacity>
+      )}
 
       <View style={[shared.card, styles.nudgeCard]}>
         <View style={styles.nudgeIcon}>
@@ -155,9 +220,28 @@ const styles = StyleSheet.create({
   actionButtonReady: {
     backgroundColor: colors.lavender,
   },
+  actionButtonDisabled: {
+    opacity: 0.5,
+  },
   actionButtonText: {
     color: colors.text,
     fontSize: 14,
+    fontWeight: "700",
+  },
+  addWalletButton: {
+    alignItems: "center",
+    backgroundColor: colors.lavender,
+    borderRadius: spacing.radiusPill,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: spacing.gap,
+    minHeight: spacing.touchMin,
+    paddingHorizontal: 20,
+  },
+  addWalletButtonText: {
+    color: colors.darkText,
+    fontSize: 15,
     fontWeight: "700",
   },
   actionCard: {

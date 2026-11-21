@@ -13,7 +13,7 @@ const opt={host,database:'postgres',max:3,connectionTimeoutMillis:1500,query_tim
 const failScoped=(pool)=>assert.rejects(verifyWalletRuntimeRole(pool), /^Error: Wallet database access is not restricted\.$/);
 const setup=async(t)=>{
   const admin=new Pool({...opt,user:'fixture_owner'});t.after(()=>admin.end());
-  for(const f of ['001-issue-grants.sql','002-apple-updates.sql','003-apple-wake-retries.sql','004-stamp-intake.sql'])
+  for(const f of ['001-issue-grants.sql','002-apple-updates.sql','003-apple-wake-retries.sql','004-stamp-intake.sql','005-pass-id-length.sql'])
     await admin.query(read(`../server/wallet/postgres/${f}`));
   await admin.query(read('../server/wallet/postgres/provision-runtime-role.sql'));
   // Login only in this disposable, socket-only fixture; no network or password.

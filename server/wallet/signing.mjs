@@ -12,13 +12,15 @@ const localDate = (date, zone) => {
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
 const assetName = /^(?:icon|logo|strip|thumbnail|background|footer)(?:@[23]x)?\.png$/;
-const opaque = /^[A-Za-z0-9_-]{22,80}$/;
+// Pass ids are 8 to 80 characters, the same rule as the stamp intake
+// and the stamp ledger. The app sends ids like stampies-corner-cafe.
+const passIdPattern = /^[A-Za-z0-9_-]{8,80}$/;
 const png = Buffer.from('89504e470d0a1a0a', 'hex');
 
 // The lookup is trusted server state, never a payload or stamp count from a caller.
 function record(input, now) {
   const { passId, program: p, stamps, redeemed = false, timeZone } = input ?? {};
-  if (!opaque.test(passId ?? '') || typeof redeemed !== 'boolean' || !p || typeof timeZone !== 'string' || !timeZone || timeZone.length > 80 || !Number.isInteger(stamps) || stamps < 0 || stamps > p.target) throw new Error('Invalid pass record.');
+  if (!passIdPattern.test(passId ?? '') || typeof redeemed !== 'boolean' || !p || typeof timeZone !== 'string' || !timeZone || timeZone.length > 80 || !Number.isInteger(stamps) || stamps < 0 || stamps > p.target) throw new Error('Invalid pass record.');
   const program = { ...p, barcodeValue: passId };
   if (!Number.isFinite(now.getTime()) || validatePassProgram(program).length || program.reward.length > 160 || program.cover.length > 64 || [program.latitude, program.longitude].some((v) => v !== undefined && !Number.isFinite(v))) throw new Error('Invalid pass record.');
   if (program.expiryIso !== undefined) {
@@ -85,6 +87,20 @@ function zonedOffset(day, zone) {
   throw new Error('Invalid pass timezone.');
 }
 
+// Build the Google Wallet loyalty object for a trusted pass record.
+// Shared by issuance and by the update path, so a pass that is issued
+// and a pass that is refreshed carry the same object. The record is
+// validated the same way in both paths.
+export function googleLoyaltyObject({issuerId, classId, origin}, trustedRecord, now = new Date()) {
+  const { passId, program, stamps, options } = record(trustedRecord, now);
+  const p = buildGooglePass(program, stamps, options);
+  p.id = `${issuerId}.stampies-${passId}`;
+  p.classId = classId;
+  p.linksModuleData.uris = [{uri: `${origin}/p/${passId}`, description: 'Open Stampies', id: 'pass-page'}];
+  if (program.expiryIso) p.validTimeInterval.end.date = `${program.expiryIso}T23:59:59${zonedOffset(program.expiryIso, trustedRecord.timeZone)}`;
+  return p;
+}
+
 // The loyalty class must already exist under this issuer. This does not create, publish or update it.
 export function createGoogleSigner({ issuerId, classId, clientEmail, privateKeyPath, origin }) {
   if (!/^[0-9]{8,40}$/.test(issuerId ?? '') || !classId?.startsWith(`${issuerId}.`) || !/^[0-9]+\.[A-Za-z0-9_.-]{1,106}$/.test(classId) || !/^[a-z0-9-]{3,64}@[a-z0-9-]{3,100}\.iam\.gserviceaccount\.com$/.test(clientEmail ?? '')) throw new Error('Invalid Google Wallet issuer configuration.');
@@ -93,12 +109,7 @@ export function createGoogleSigner({ issuerId, classId, clientEmail, privateKeyP
   const key = createPrivateKey(readFileSync(privateKeyPath));
   if (key.asymmetricKeyType !== 'rsa' || (createPublicKey(key).asymmetricKeyDetails?.modulusLength ?? 0) < 2048) throw new Error('A 2048-bit or larger RSA service key is required.');
   return (trustedRecord, now = new Date()) => {
-    const { passId, program, stamps, options } = record(trustedRecord, now);
-    const p = buildGooglePass(program, stamps, options);
-    p.id = `${issuerId}.stampies-${passId}`;
-    p.classId = classId;
-    p.linksModuleData.uris = [{uri: `${origin}/p/${passId}`, description: 'Open Stampies', id: 'pass-page'}];
-    if (program.expiryIso) p.validTimeInterval.end.date = `${program.expiryIso}T23:59:59${zonedOffset(program.expiryIso, trustedRecord.timeZone)}`;
+    const p = googleLoyaltyObject({issuerId, classId, origin}, trustedRecord, now);
     const enc = b64({alg: 'RS256', typ: 'JWT'}) + '.' + b64({iss: clientEmail, aud: 'google', typ: 'savetowallet', iat: Math.floor(now.getTime()/1000), origins: [origin], payload: {loyaltyObjects: [p]}});
     return 'https://pay.google.com/gp/v/save/' + enc + '.' + sign('RSA-SHA256', Buffer.from(enc), key).toString('base64url');
   };

@@ -56,9 +56,11 @@ function isValidStampResponse(body: unknown): boolean {
  * Build a sender that posts stamps to POST /wallet/stamps at the
  * given origin. Throws when the origin is not a usable https URL.
  * The returned sender resolves only on a 200 response with a
- * well-formed body ({recorded, duplicate, stamps}). Any other
- * status, a network failure, or a malformed response rejects, so
- * the drain marks the stamp failed and retries it later.
+ * well-formed body ({recorded, duplicate, stamps, state}). The
+ * state is the pass state after the stamp, from the server state
+ * machine. Any other status, a network failure, or a malformed
+ * response rejects, so the drain marks the stamp failed and
+ * retries it later.
  */
 export function createHttpStampSender({
   origin,

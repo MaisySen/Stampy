@@ -34,7 +34,7 @@ const setup=async(t)=>{
   const admin=new Pool({...opt,database:'postgres',user:'fixture_owner'});t.after(()=>admin.end());
   await admin.query('CREATE DATABASE wallet_service');
   const owner=new Pool({...opt,user:'fixture_owner'});t.after(()=>owner.end());
-  for(const f of ['001-issue-grants.sql','002-apple-updates.sql','003-apple-wake-retries.sql','004-stamp-intake.sql'])
+  for(const f of ['001-issue-grants.sql','002-apple-updates.sql','003-apple-wake-retries.sql','004-stamp-intake.sql','005-pass-id-length.sql'])
     await owner.query(read(`../server/wallet/postgres/${f}`));
   const role=await admin.query(`SELECT 1 FROM pg_roles WHERE rolname='stampies_wallet_runtime'`);
   if (role.rowCount===0) {

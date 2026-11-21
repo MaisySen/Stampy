@@ -33,6 +33,7 @@ const files = [
   "tests/stampSender.test.ts",
   "tests/device.test.ts",
   "tests/pass.test.ts",
+  "tests/passState.test.ts",
   "tests/passInstall.test.ts",
   "tests/node.d.ts",
 ];

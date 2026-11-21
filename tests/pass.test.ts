@@ -75,9 +75,9 @@ test("reward state is active below the target", () => {
   assert.equal(passStateLabel("active"), "Collecting stamps");
 });
 
-test("reward state is full at the target", () => {
-  assert.equal(passRewardState(9, 9), "full");
-  assert.equal(passStateLabel("full"), "Reward ready");
+test("reward state is reward earned at the target", () => {
+  assert.equal(passRewardState(9, 9), "reward-earned");
+  assert.equal(passStateLabel("reward-earned"), "Reward ready");
 });
 
 test("reward state is redeemed after a claim", () => {
@@ -145,6 +145,118 @@ test("google pass carries the stamp count and share link", () => {
   );
 });
 
+test("apple pass carries the stamp grid, terms and Powered by Stampies", () => {
+  const payload = buildApplePass(program(), 5);
+  assert.equal(payload.storeCard.primaryFields[1].key, "grid");
+  assert.equal(payload.storeCard.primaryFields[1].value, "●●●●●○○○○");
+  const back = new Map(
+    payload.storeCard.backFields.map((f) => [f.key, f.value]),
+  );
+  assert.equal(
+    back.get("terms"),
+    "One stamp per visit. One visit per day. The reward is the free item shown on this card. The pass cannot be used after its expiry date.",
+  );
+  assert.equal(back.get("poweredBy"), "Powered by Stampies");
+  assert.equal(back.get("state"), "Collecting stamps");
+});
+
+test("apple pass for a full 9 stamp card carries every field", () => {
+  const payload = buildApplePass(
+    program({ latitude: -33.86, longitude: 151.2, expiryIso: "2027-06-30" }),
+    9,
+  );
+  assert.equal(payload.description, "Corner Cafe stamp card");
+  assert.equal(payload.logoText, "Corner Cafe");
+  assert.equal(payload.storeCard.primaryFields[0].value, "9 of 9");
+  assert.equal(payload.storeCard.primaryFields[1].value, "●●●●●●●●●");
+  assert.equal(
+    payload.storeCard.secondaryFields[0].value,
+    "Buy 8, get the 9th free",
+  );
+  assert.equal(payload.storeCard.auxiliaryFields[0].value, "Reward ready");
+  assert.equal(payload.barcode.format, "PKBarcodeFormatQR");
+  assert.equal(payload.barcode.message, "stampies-c1-0001");
+  assert.equal(payload.barcode.messageEncoding, "iso-8859-1");
+  assert.equal(payload.locations?.[0].latitude, -33.86);
+  assert.equal(payload.locations?.[0].longitude, 151.2);
+  assert.equal(
+    payload.locations?.[0].relevantText,
+    "You are near Corner Cafe.",
+  );
+  assert.equal(payload.expirationDate, "2027-06-30");
+  assert.equal(payload.voided, false);
+  const back = new Map(
+    payload.storeCard.backFields.map((f) => [f.key, f.value]),
+  );
+  assert.equal(back.get("state"), "Reward ready");
+  assert.equal(back.get("poweredBy"), "Powered by Stampies");
+});
+
+test("apple pass for an expired card is voided", () => {
+  const payload = buildApplePass(program({ expiryIso: "2026-01-01" }), 5, {
+    todayIso: "2026-06-01",
+  });
+  assert.equal(payload.voided, true);
+  const back = new Map(
+    payload.storeCard.backFields.map((f) => [f.key, f.value]),
+  );
+  assert.equal(back.get("state"), "Pass expired");
+});
+
+test("google pass carries the business, grid, terms and Powered by Stampies", () => {
+  const payload = buildGooglePass(program(), 5);
+  const modules = new Map(
+    payload.textModulesData.map((m) => [m.id, m.body]),
+  );
+  assert.equal(modules.get("business"), "Corner Cafe");
+  assert.equal(modules.get("reward"), "Buy 8, get the 9th free");
+  assert.equal(modules.get("stamp-grid"), "●●●●●○○○○");
+  assert.equal(modules.get("status"), "Collecting stamps");
+  assert.equal(
+    modules.get("terms"),
+    "One stamp per visit. One visit per day. The reward is the free item shown on this card. The pass cannot be used after its expiry date.",
+  );
+  assert.equal(modules.get("powered-by"), "Powered by Stampies");
+  assert.equal(payload.barcode.type, "QR_CODE");
+  assert.equal(payload.barcode.value, "stampies-c1-0001");
+});
+
+test("google pass for a full 9 stamp card carries every field", () => {
+  const payload = buildGooglePass(
+    program({ latitude: -33.86, longitude: 151.2, expiryIso: "2027-06-30" }),
+    9,
+  );
+  assert.equal(payload.loyaltyPoints.label, "Stamps");
+  assert.equal(payload.loyaltyPoints.balance.string, "9 of 9");
+  assert.equal(payload.state, "ACTIVE");
+  const modules = new Map(
+    payload.textModulesData.map((m) => [m.id, m.body]),
+  );
+  assert.equal(modules.get("business"), "Corner Cafe");
+  assert.equal(modules.get("stamp-grid"), "●●●●●●●●●");
+  assert.equal(
+    modules.get("to-go"),
+    "Reward ready. Show this pass at the counter.",
+  );
+  assert.equal(modules.get("status"), "Reward ready");
+  assert.equal(payload.locations?.[0].latitude, -33.86);
+  assert.equal(payload.locations?.[0].longitude, 151.2);
+  assert.equal(payload.validTimeInterval?.end.date, "2027-06-30");
+  assert.equal(
+    payload.linksModuleData.uris[0].uri,
+    "https://stampies.app/p/corner-cafe",
+  );
+});
+
+test("google pass for a redeemed card is inactive", () => {
+  const payload = buildGooglePass(program(), 9, { redeemed: true });
+  assert.equal(payload.state, "INACTIVE");
+  const modules = new Map(
+    payload.textModulesData.map((m) => [m.id, m.body]),
+  );
+  assert.equal(modules.get("status"), "Reward claimed");
+});
+
 test("google pass is expired after the expiry date", () => {
   const payload = buildGooglePass(program({ expiryIso: "2026-01-01" }), 5, {
     todayIso: "2026-06-01",
@@ -158,7 +270,7 @@ test("pass update on stamp moves the count and state", () => {
   assert.equal(before.state, "active");
   assert.equal(before.stampsLeft, 1);
   const after = updatePassOnStamp(program(), 9);
-  assert.equal(after.state, "full");
+  assert.equal(after.state, "reward-earned");
   assert.equal(after.stamps, 9);
   assert.equal(after.stampsLeft, 0);
   assert.equal(after.apple.storeCard.primaryFields[0].value, "9 of 9");
@@ -168,5 +280,5 @@ test("pass update on stamp moves the count and state", () => {
 test("pass payloads cap stamps at the target", () => {
   const payloads = buildPassPayloads(program(), 14);
   assert.equal(payloads.stamps, 9);
-  assert.equal(payloads.state, "full");
+  assert.equal(payloads.state, "reward-earned");
 });

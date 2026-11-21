@@ -68,3 +68,44 @@ test('A committed Wallet stamp update pushes once, with no regression or replay 
   f.set(getState(3,2)); await assert.rejects(s.committedAppleChange(passId),/Conflicting pass source version/);
   assert.equal(await s.flushAppleWakes(),0);
 });
+
+// The app builds pass ids as stampies-<business-slug>, for example
+// stampies-corner-cafe. The server used to require 22 characters,
+// which rejected every real pass id: mint returned null and the Apple
+// refresh never fired. This test proves the app shape works end to
+// end: mint, issue, register, stamp refresh, and pass fetch.
+test('Wallet refresh works for the app pass id shape, stampies-corner-cafe', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'wallet-short-id-')); t.after(() => rmSync(dir, { force: true, recursive: true }));
+  const shortPassId = 'stampies-corner-cafe';
+  let ledger = { version: 1, record: { passId: shortPassId, stamps: 3 } };
+  const pushes = []; let complete;
+  const push = { sendWake: (wake) => { pushes.push(wake); return new Promise((r) => { complete = r; }); }, close: () => complete?.('retry') };
+  let identity;
+  const s = openWalletService({
+    origin, tokenDbPath: join(dir, 'tokens.db'), now: () => 100_000,
+    lookupOwnedPass: async (o) => (o.ownerId === ownerId && o.passId === shortPassId ? ledger : null),
+    apple: {
+      rootKey: Buffer.alloc(32, 17), updateDbPath: join(dir, 'updates.db'), push,
+      loadCommittedPass: async (id) => (id === shortPassId ? ledger : null),
+      makeSigner: (options) => { identity = options; return (r) => Buffer.from(JSON.stringify({ count: r.stamps })); },
+    },
+  });
+  t.after(() => s.close());
+  const grant = await s.mint({ ownerId, passId: shortPassId, platform: 'apple' });
+  assert.notEqual(grant, null);
+  const issued = await s.handle(raw('/wallet/apple', 'POST', `Bearer ${grant.token}`, { passId: 'ignore_me', stamps: 50 }));
+  assert.equal(issued.status, 200);
+  assert.deepEqual(await issued.json(), { count: 3 });
+  const auth = `ApplePass ${identity.tokenFor(shortPassId)}`;
+  const reg = `/v1/devices/fixture_device_alfa/registrations/pass.au.fintex.stampies/${shortPassId}`;
+  assert.equal((await s.handle(raw(reg, 'POST', auth, { pushToken: 'a9'.repeat(32) }))).status, 201);
+  ledger = { version: 2, record: { passId: shortPassId, stamps: 4 } };
+  assert.equal(await s.committedAppleChange(shortPassId), true);
+  const flush = s.flushAppleWakes();
+  assert.equal(pushes.length, 1);
+  complete('accepted');
+  assert.equal(await flush, 1);
+  const get = await s.handle(raw(`/v1/passes/pass.au.fintex.stampies/${shortPassId}`, 'GET', auth));
+  assert.equal(get.status, 200);
+  assert.deepEqual(await get.json(), { count: 4 });
+});

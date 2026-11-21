@@ -23,7 +23,7 @@ async function setup(t){
   await admin.query('CREATE DATABASE wallet_protocol');
   const opt={...base,database:'wallet_protocol'};
   const owner=new Pool({...opt,user:'fixture_owner'}); t.after(()=>owner.end());
-  for(const m of ['001-issue-grants','002-apple-updates','003-apple-wake-retries']) await owner.query(readFileSync(new URL(`../server/wallet/postgres/${m}.sql`,import.meta.url),'utf8'));
+  for(const m of ['001-issue-grants','002-apple-updates','003-apple-wake-retries','005-pass-id-length']) await owner.query(readFileSync(new URL(`../server/wallet/postgres/${m}.sql`,import.meta.url),'utf8'));
   await owner.query(`CREATE ROLE wallet_protocol_runtime LOGIN;
     GRANT USAGE ON SCHEMA stampies_wallet TO wallet_protocol_runtime;
     GRANT SELECT,INSERT,DELETE ON stampies_wallet.issue_grants TO wallet_protocol_runtime;

@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS stampies_wallet.apple_clock (
 INSERT INTO stampies_wallet.apple_clock(singleton,revision) VALUES (true,0)
   ON CONFLICT (singleton) DO NOTHING;
 CREATE TABLE IF NOT EXISTS stampies_wallet.apple_pass (
-  serial TEXT PRIMARY KEY CHECK (serial ~ '^[A-Za-z0-9_-]{22,80}$'),
+  serial TEXT PRIMARY KEY CHECK (serial ~ '^[A-Za-z0-9_-]{8,80}$'),
   payload TEXT NOT NULL CHECK (octet_length(payload) BETWEEN 2 AND 16384),
   source_version BIGINT NOT NULL CHECK (source_version BETWEEN 1 AND 9007199254740991),
   revision BIGINT NOT NULL CHECK (revision BETWEEN 1 AND 999999999999999)

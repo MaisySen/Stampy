@@ -41,11 +41,11 @@ const reply = async (response) => ({ status: response.status, json: await respon
 async function checkIntakeBehavior({ service, setLedger, url, prefix }) {
   const stamp = (suffix, overrides = {}) => stampBody({ stampId: `${prefix}-${suffix}`, ...overrides });
   let r = await reply(await postStamp(service, url, stamp('a')));
-  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 1 } });
+  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 1, state: 'active' } });
   r = await reply(await postStamp(service, url, stamp('a')));
-  assert.deepEqual(r, { status: 200, json: { recorded: false, duplicate: true, stamps: 1 } });
+  assert.deepEqual(r, { status: 200, json: { recorded: false, duplicate: true, stamps: 1, state: 'active' } });
   r = await reply(await postStamp(service, url, stamp('b')));
-  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 2 } });
+  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 2, state: 'active' } });
   r = await reply(await postStamp(service, url, stamp('c', { passId: 'stampies-unknown-cafe' })));
   assert.equal(r.status, 404);
   r = await reply(await postStamp(service, url, stamp('d', { businessId: otherBusinessId })));
@@ -64,13 +64,13 @@ async function checkIntakeBehavior({ service, setLedger, url, prefix }) {
   assert.equal(r.status, 400);
   // A stamp count from the device is ignored. The count comes from the ledger.
   r = await reply(await postStamp(service, url, stamp('i', { stamps: 99, stampCount: 50, reward: 'redeemed' })));
-  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 3 } });
+  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 3, state: 'active' } });
   // A stamp id reused for another pass is a conflict, and records nothing.
   setLedger(otherPassId, 1, { passId: otherPassId, businessId, stamps: 0 });
   r = await reply(await postStamp(service, url, stamp('a', { passId: otherPassId })));
   assert.equal(r.status, 409);
   r = await reply(await postStamp(service, url, stamp('j', { passId: otherPassId })));
-  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 1 } });
+  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 1, state: 'active' } });
 }
 
 function sqliteFixture(t, url = origin) {
@@ -124,9 +124,46 @@ test('recording a stamp queues the pass update through committedAppleChange', as
   // The merchant ledger applies the stamp, then the app syncs it.
   f.setLedger(hookPassId, 2, { passId: hookPassId, businessId, stamps: 4 });
   const r = await reply(await postStamp(s, origin + '/wallet/stamps', stampBody({ stampId: 'r-1790000000000-u', passId: hookPassId })));
-  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 1 } });
+  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 1, state: 'active' } });
   const pass = await s.handle(raw(`/v1/passes/pass.au.fintex.stampies/${hookPassId}`, 'GET', auth));
   assert.deepEqual(await pass.json(), { count: 4 });
+});
+
+test('stamp intake refuses expired, redeemed and full passes and reports reward earned on the completing stamp', async (t) => {
+  const f = sqliteFixture(t);
+  const s = f.service;
+  const post = async (body) => reply(await postStamp(s, origin + '/wallet/stamps', body));
+  // Expired: the expiry date is before the fixture clock, so the stamp is gone for good.
+  const expiredPassId = 'stampies-expired-cafe';
+  f.setLedger(expiredPassId, 1, { passId: expiredPassId, businessId, stamps: 2, expiryIso: '2026-01-01' });
+  let r = await post(stampBody({ stampId: 'r-1790000000000-x1', passId: expiredPassId }));
+  assert.deepEqual(r, { status: 410, json: { recorded: false, duplicate: false, stamps: 0, state: 'expired' } });
+  // Redeemed: the reward was already claimed, so no more stamps.
+  const redeemedPassId = 'stampies-redeemed-cafe';
+  f.setLedger(redeemedPassId, 1, { passId: redeemedPassId, businessId, stamps: 9, target: 9, redeemed: true });
+  r = await post(stampBody({ stampId: 'r-1790000000000-x2', passId: redeemedPassId }));
+  assert.deepEqual(r, { status: 409, json: { recorded: false, duplicate: false, stamps: 0, state: 'redeemed' } });
+  // Full: the card is complete and must be redeemed before a new card starts.
+  const fullPassId = 'stampies-full-cafe';
+  f.setLedger(fullPassId, 1, { passId: fullPassId, businessId, stamps: 9, target: 9 });
+  r = await post(stampBody({ stampId: 'r-1790000000000-x3', passId: fullPassId }));
+  assert.deepEqual(r, { status: 409, json: { recorded: false, duplicate: false, stamps: 0, state: 'reward-earned' } });
+  // Completing stamp: the ninth stamp flips the state to reward earned in the response.
+  const closingPassId = 'stampies-closing-cafe';
+  f.setLedger(closingPassId, 1, { passId: closingPassId, businessId, stamps: 8, target: 9 });
+  r = await post(stampBody({ stampId: 'r-1790000000000-x4', passId: closingPassId }));
+  assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 1, state: 'reward-earned' } });
+  // The merchant ledger applies the stamp, then a retry of the same stamp
+  // is a no-op success that still reports the full card.
+  f.setLedger(closingPassId, 2, { passId: closingPassId, businessId, stamps: 9, target: 9 });
+  r = await post(stampBody({ stampId: 'r-1790000000000-x4', passId: closingPassId }));
+  assert.deepEqual(r, { status: 200, json: { recorded: false, duplicate: true, stamps: 1, state: 'reward-earned' } });
+  // And a new stamp on the now full card is refused.
+  r = await post(stampBody({ stampId: 'r-1790000000000-x5', passId: closingPassId }));
+  assert.deepEqual(r, { status: 409, json: { recorded: false, duplicate: false, stamps: 1, state: 'reward-earned' } });
+  // A refused stamp records nothing: the intake ledger count stays at 1.
+  r = await post(stampBody({ stampId: 'r-1790000000000-x6', passId: closingPassId }));
+  assert.deepEqual(r, { status: 409, json: { recorded: false, duplicate: false, stamps: 1, state: 'reward-earned' } });
 });
 
 test('stamp intake through the HTTP adapter keeps the ingress protections', async (t) => {
@@ -150,7 +187,7 @@ test('stamp intake through the HTTP adapter keeps the ingress protections', asyn
   try {
     const ok = await call('/wallet/stamps', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(stampBody({ stampId: 'r-1790000000000-h' })) });
     assert.equal(ok.status, 200);
-    assert.deepEqual(JSON.parse(ok.body), { recorded: true, duplicate: false, stamps: 1 });
+    assert.deepEqual(JSON.parse(ok.body), { recorded: true, duplicate: false, stamps: 1, state: 'active' });
     assert.equal((await call('/wallet/stamps', { method: 'GET' })).status, 405);
     assert.equal((await call('/wallet/stamps?x=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(stampBody()) })).status, 404);
     assert.equal((await call('/wallet/stamps', { method: 'POST', headers: { host: 'other.example', 'content-type': 'application/json' }, body: JSON.stringify(stampBody()) })).status, 404);
@@ -184,7 +221,7 @@ test('stamp intake records exactly once on Postgres', { skip: !hasPgSocket }, as
   await control.query('CREATE DATABASE wallet_stamp_intake');
   const owner = new Pool({ ...opt, database: 'wallet_stamp_intake', user: 'fixture_owner' });
   t.after(() => owner.end());
-  for (const f of ['001-issue-grants.sql', '002-apple-updates.sql', '003-apple-wake-retries.sql', '004-stamp-intake.sql']) {
+  for (const f of ['001-issue-grants.sql', '002-apple-updates.sql', '003-apple-wake-retries.sql', '004-stamp-intake.sql', '005-pass-id-length.sql']) {
     await owner.query(read(`../server/wallet/postgres/${f}`));
   }
   const role = await control.query(`SELECT 1 FROM pg_roles WHERE rolname='stampies_wallet_runtime'`);

@@ -3,12 +3,13 @@
 // after a lost response never double stamps. The store never trusts a
 // count from a caller: count() derives it from the recorded rows.
 //
-// The interface is {record, count}. The Postgres store in
+// The interface is {record, count, find}. The Postgres store in
 // server/wallet/postgres/stamp-ledger.mjs implements the same interface
 // with the same semantics: record returns 'recorded' for a fresh stamp,
 // 'duplicate' when the identical stamp is already recorded, and
 // 'conflict' when the stamp id is already used for another pass or
-// business. The service owns the database handle; this store has no close.
+// business. find returns the pass and business for a stamp id already
+// recorded, or null. The service owns the database handle; this store has no close.
 export function openSqliteStampLedger(db) {
   if (!db || typeof db.exec !== 'function' || typeof db.prepare !== 'function') {
     throw new Error('A Wallet stamp ledger database is required.');
@@ -42,5 +43,10 @@ export function openSqliteStampLedger(db) {
   function count(passId) {
     return countByPass.get(passId).n;
   }
-  return Object.freeze({record, count});
+  function find(stampId) {
+    const row = existing.get(stampId);
+    if (!row) return null;
+    return { passId: row.pass_id, businessId: row.business_id };
+  }
+  return Object.freeze({record, count, find});
 }

@@ -13,6 +13,8 @@ import {
 import type { BusinessState, Customer, StampMethod } from "./src/data";
 import { dayString } from "./src/lib/fraud";
 import { businessSlug, passShareLink } from "./src/lib/pass";
+import { derivePassState } from "./src/lib/pass";
+import type { PassState } from "./src/lib/pass";
 import { OfflineStampQueue } from "./src/lib/offlineQueue";
 import { startOfflineStampQueue } from "./src/lib/offlineQueueStartup";
 import { createOfflineSyncDrain } from "./src/lib/offlineSync";
@@ -36,6 +38,7 @@ export default function App() {
   const [installOpen, setInstallOpen] = useState(false);
   const [legalPage, setLegalPage] = useState<LegalPage | null>(null);
   const [stamps, setStamps] = useState(5);
+  const [redeemed, setRedeemed] = useState(false);
   const [business, setBusiness] = useState<BusinessState>(demoBusiness);
   const [customers, setCustomers] = useState<Customer[]>(demoCustomers);
   const [lastStampAtMs, setLastStampAtMs] = useState<number | null>(null);
@@ -90,6 +93,9 @@ export default function App() {
     }
     const next = stamps + 1;
     setStamps(next);
+    // A stamp on a fresh card clears the claimed state: the new card
+    // starts at 0 stamps and the reward claimed message goes away.
+    setRedeemed(false);
     const now = new Date();
     const stampId = `r-${now.getTime()}`;
     setLastStampAtMs(now.getTime());
@@ -122,8 +128,17 @@ export default function App() {
 
   function redeemReward() {
     setStamps(0);
+    setRedeemed(true);
     setTab("wallet");
   }
+
+  // The Wallet screen shows the four pass states distinctly. The demo
+  // card has no expiry date, so the expired state only appears when a
+  // real pass carries one. The state machine is the same one the
+  // server uses, so the app and the backend agree on the state.
+  const passState: PassState = redeemed
+    ? "redeemed"
+    : derivePassState({ stamps, target: STAMPS_TO_REWARD });
 
   function clearDemoData() {
     setBusiness(emptyBusiness);
@@ -181,6 +196,7 @@ export default function App() {
             businessName={business.name}
             reward={business.reward}
             stamps={stamps}
+            passState={passState}
             onRedeem={redeemReward}
             onGoToStamp={() => setTab("stamp")}
             onAddToWallet={() => setInstallOpen(true)}

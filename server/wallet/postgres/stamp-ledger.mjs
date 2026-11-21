@@ -6,12 +6,13 @@
 // SELECT and INSERT on it, nothing else, and the role verifier in
 // runtime-role.mjs checks that exact contract.
 //
-// The interface is {record, count}. The SQLite store in
+// The interface is {record, count, find}. The SQLite store in
 // server/wallet/stamp-ledger.mjs implements the same interface with the
 // same semantics: record returns 'recorded' for a fresh stamp,
 // 'duplicate' when the identical stamp is already recorded, and
 // 'conflict' when the stamp id is already used for another pass or
-// business. The caller owns pool lifecycle; this store has no close.
+// business. find returns the pass and business for a stamp id already
+// recorded, or null. The caller owns pool lifecycle; this store has no close.
 export function openPostgresStampLedger({pool}) {
   if (typeof pool?.query !== 'function') throw new Error('A private Wallet Postgres pool is required.');
   async function count(passId) {
@@ -30,5 +31,11 @@ export function openPostgresStampLedger({pool}) {
     if (!row || row.pass_id !== passId || row.business_id !== businessId) return {status: 'conflict', stamps};
     return {status: 'duplicate', stamps};
   }
-  return Object.freeze({record, count});
+  async function find(stampId) {
+    const row = (await pool.query(
+      'SELECT pass_id,business_id FROM stampies_wallet.stamp_ledger WHERE stamp_id=$1', [stampId])).rows[0];
+    if (!row) return null;
+    return { passId: row.pass_id, businessId: row.business_id };
+  }
+  return Object.freeze({record, count, find});
 }

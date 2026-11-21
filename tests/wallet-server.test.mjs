@@ -38,7 +38,7 @@ test('Apple package hashes, signatures, format and chain verify independently', 
   assert.equal(installed.authenticationToken,updates.tokenFor(passId));
   assert.throws(()=>createAppleSigner({...options,teamIdentifier:'WRONG12345'}),/trust chain/);
   assert.throws(()=>createAppleSigner({...options,privateKeyPath:p('ik')}),/do not match/);
-  assert.throws(()=>signApple({...record,passId:'signed-by-guess'}),/Invalid pass/);
+  assert.throws(()=>signApple({...record,passId:'bad'}),/Invalid pass/); // under the 8 character pass id floor
   assert.throws(()=>signApple(record,new Date('2000-01-01')),/validity/);
   writeFileSync(p('wallet.pkpass'), signApple(record));
   assert.match(shell('unzip',['-t',p('wallet.pkpass')]).toString(),/No errors detected/);
@@ -60,6 +60,62 @@ test('Google Save JWT uses issuer class, opaque ID and a verifiable RS256 signat
   const href=signGoogle(record,new Date('2026-11-20T00:00:00Z'));assert(href.startsWith('https://pay.google.com/gp/v/save/'));
   const [h,b,s] = href.split('/').at(-1).split('.'); assert(verify('RSA-SHA256',Buffer.from(`${h}.${b}`),createPublicKey(readFileSync(key)),Buffer.from(s,'base64url')));
   assert.equal(JSON.parse(Buffer.from(h,'base64url')).alg,'RS256');const data=JSON.parse(Buffer.from(b,'base64url'));assert.equal(data.aud,'google');assert.equal(data.typ,'savetowallet');assert.equal(data.payload.loyaltyObjects[0].classId,config.classId);assert.equal(data.payload.loyaltyObjects[0].id,`123456789.stampies-${passId}`);assert(!Object.hasOwn(data.payload.loyaltyObjects[0],'smartTapRedemptionValue'));
+});
+
+test('Signed passes carry the reward state on every update', (t) => {
+  const root = mkdtempSync(join(tmpdir(),'wallet-state-')); t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const p = (n)=>join(root,n), run = (args)=>shell('openssl',args);
+  run(['req','-new','-x509','-newkey','rsa:2048','-nodes','-days','2','-subj','/CN=Fixture root','-addext','basicConstraints=critical,CA:TRUE','-keyout',p('rk'),'-out',p('rc')]);
+  run(['req','-new','-newkey','rsa:2048','-nodes','-subj','/CN=Fixture intermediate','-keyout',p('ik'),'-out',p('ir')]);
+  writeFileSync(p('ica'),'basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\n');
+  run(['x509','-req','-in',p('ir'),'-CA',p('rc'),'-CAkey',p('rk'),'-set_serial','2','-days','2','-extfile',p('ica'),'-out',p('ic')]);
+  run(['req','-new','-newkey','rsa:2048','-nodes','-subj','/UID=pass.au.fintex.stampies/OU=TEST123456/CN=Fixture wallet','-keyout',p('sk'),'-out',p('sr')]);
+  writeFileSync(p('sca'),'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n');
+  run(['x509','-req','-in',p('sr'),'-CA',p('ic'),'-CAkey',p('ik'),'-set_serial','3','-days','2','-extfile',p('sca'),'-out',p('sc')]);
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jKksAAAAASUVORK5CYII=','base64');
+  const signApple=createAppleSigner({teamIdentifier:'TEST123456', certificatePath:p('sc'), privateKeyPath:p('sk'), intermediatePath:p('ic'),rootPath:p('rc'),assets:{'icon.png':png,'icon@2x.png':png}});
+  const readPass = (zipPath) => JSON.parse(shell('unzip',['-p',zipPath,'pass.json']));
+  const back = (pass) => new Map(pass.storeCard.backFields.map((f) => [f.key, f.value]));
+  const signToFile = (name, rec) => { const z = p(name); writeFileSync(z, signApple(rec, now)); return z; };
+  const now = new Date();
+  // A stamp that completes the card flips the signed pass to reward earned.
+  const full = readPass(signToFile('full.pkpass', {...record, stamps: 9}));
+  assert.equal(full.storeCard.primaryFields[0].value, '9 of 9');
+  assert.equal(full.storeCard.primaryFields[1].value, '●●●●●●●●●');
+  assert.equal(full.storeCard.auxiliaryFields[0].value, 'Reward ready');
+  assert.equal(back(full).get('state'), 'Reward ready');
+  assert.equal(back(full).get('poweredBy'), 'Powered by Stampies');
+  assert.equal(full.voided, false);
+  // An expired card signs voided, with the expiry carried on the pass.
+  const expired = readPass(signToFile('expired.pkpass', {...record, stamps: 5, program: {...record.program, expiryIso: '2026-01-01'}}));
+  assert.equal(expired.voided, true);
+  assert.equal(back(expired).get('state'), 'Pass expired');
+  assert.equal(expired.expirationDate, '2026-01-01T23:59:59+11:00');
+  // A redeemed card signs with the claimed status on the back.
+  const redeemed = readPass(signToFile('redeemed.pkpass', {...record, stamps: 9, redeemed: true}));
+  assert.equal(back(redeemed).get('state'), 'Reward claimed');
+  assert.equal(redeemed.voided, false);
+  // The Google signer carries the same states in the JWT payload.
+  const key=join(root,'key.pem'); shell('openssl',['genpkey','-algorithm','RSA','-pkeyopt','rsa_keygen_bits:2048','-out',key]);
+  const signGoogle=createGoogleSigner({issuerId:'123456789', classId:'123456789.fixture', clientEmail:'fixture@project-example.iam.gserviceaccount.com', privateKeyPath:key,origin:'https://stampies.example'});
+  const googleObject = (rec) => {
+    const href = signGoogle(rec, now);
+    const body = href.split('/').at(-1).split('.')[1];
+    return JSON.parse(Buffer.from(body,'base64url')).payload.loyaltyObjects[0];
+  };
+  const modules = (obj) => new Map(obj.textModulesData.map((m) => [m.id, m.body]));
+  const googleFull = googleObject({...record, stamps: 9});
+  assert.equal(googleFull.state, 'ACTIVE');
+  assert.equal(googleFull.loyaltyPoints.balance.string, '9 of 9');
+  assert.equal(modules(googleFull).get('status'), 'Reward ready');
+  assert.equal(modules(googleFull).get('stamp-grid'), '●●●●●●●●●');
+  assert.equal(modules(googleFull).get('powered-by'), 'Powered by Stampies');
+  const googleExpired = googleObject({...record, stamps: 5, program: {...record.program, expiryIso: '2026-01-01'}});
+  assert.equal(googleExpired.state, 'EXPIRED');
+  assert.equal(modules(googleExpired).get('status'), 'Pass expired');
+  const googleRedeemed = googleObject({...record, stamps: 9, redeemed: true});
+  assert.equal(googleRedeemed.state, 'INACTIVE');
+  assert.equal(modules(googleRedeemed).get('status'), 'Reward claimed');
 });
 
 test('Wallet handler fails closed and only signs a trusted server record', async () => {

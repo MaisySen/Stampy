@@ -8,7 +8,37 @@
  * No server credentials, no secrets, no hard coded business names.
  */
 
-export type PassRewardState = "active" | "full" | "redeemed" | "expired";
+/**
+ * Pass reward state machine.
+ *
+ * States:
+ * - active: collecting stamps, below the target.
+ * - reward-earned: the stamp that completes the card has landed.
+ * - redeemed: the reward was claimed at the counter.
+ * - expired: today is past the pass expiry date.
+ *
+ * A stamp is only allowed while the pass is active. A full card
+ * must be redeemed before a new card starts. An expired or redeemed
+ * pass takes no more stamps.
+ *
+ * The state machine lives in this file on purpose: the server
+ * imports this module directly, and a server-imported module must
+ * not import another TypeScript module, since the app compiler and
+ * the server loader accept no common import form for that. The app,
+ * the pass payloads, and the server stamp intake all derive the
+ * state from these functions, so they always agree.
+ */
+
+export type PassState = "active" | "reward-earned" | "redeemed" | "expired";
+export type PassRewardState = PassState;
+
+export interface PassStateInput {
+  stamps: number;
+  target: number;
+  redeemed?: boolean;
+  expiryIso?: string;
+  todayIso?: string;
+}
 
 export interface PassProgram {
   businessName: string;
@@ -32,6 +62,9 @@ export const PASS_ORGANIZATION = "Fintex Australia Pty Ltd";
 export const PASS_TYPE_IDENTIFIER = "pass.au.fintex.stampies";
 export const PASS_TARGET_MIN = 4;
 export const PASS_TARGET_MAX = 12;
+export const PASS_TERMS =
+  "One stamp per visit. One visit per day. The reward is the free item shown on this card. The pass cannot be used after its expiry date.";
+export const PASS_POWERED_BY = "Powered by Stampies";
 
 export function businessSlug(businessName: string): string {
   return businessName
@@ -118,7 +151,7 @@ export function validatePassProgram(program: PassProgram): string[] {
   return errors;
 }
 
-export function isPassExpired(expiryIso: string | undefined, todayIso?: string): boolean {
+export function isDatePast(expiryIso: string | undefined, todayIso?: string): boolean {
   if (expiryIso === undefined || !isValidDateIso(expiryIso)) {
     return false;
   }
@@ -126,27 +159,41 @@ export function isPassExpired(expiryIso: string | undefined, todayIso?: string):
   return today > expiryIso;
 }
 
+export function isPassExpired(expiryIso: string | undefined, todayIso?: string): boolean {
+  return isDatePast(expiryIso, todayIso);
+}
+
+export function derivePassState(input: PassStateInput): PassState {
+  const safeStamps = Math.max(0, Math.floor(input.stamps));
+  const safeTarget = Math.max(1, Math.floor(input.target));
+  if (input.redeemed === true) {
+    return "redeemed";
+  }
+  if (isDatePast(input.expiryIso, input.todayIso)) {
+    return "expired";
+  }
+  if (safeStamps >= safeTarget) {
+    return "reward-earned";
+  }
+  return "active";
+}
+
 export function passRewardState(
   stamps: number,
   target: number,
   options: PassBuildOptions = {},
 ): PassRewardState {
-  const safeStamps = Math.max(0, Math.floor(stamps));
-  const safeTarget = Math.max(1, Math.floor(target));
-  if (options.redeemed === true) {
-    return "redeemed";
-  }
-  if (isPassExpired(options.expiryIso, options.todayIso)) {
-    return "expired";
-  }
-  if (safeStamps >= safeTarget) {
-    return "full";
-  }
-  return "active";
+  return derivePassState({
+    stamps,
+    target,
+    redeemed: options.redeemed,
+    expiryIso: options.expiryIso,
+    todayIso: options.todayIso,
+  });
 }
 
 export function passStateLabel(state: PassRewardState): string {
-  if (state === "full") {
+  if (state === "reward-earned") {
     return "Reward ready";
   }
   if (state === "redeemed") {
@@ -156,6 +203,53 @@ export function passStateLabel(state: PassRewardState): string {
     return "Pass expired";
   }
   return "Collecting stamps";
+}
+
+export function canStampPass(state: PassState): boolean {
+  return state === "active";
+}
+
+/**
+ * Apply one stamp to a pass. Returns the new count and state.
+ * A pass that cannot take a stamp comes back unchanged: the count
+ * does not move and the state does not change. The caller refuses
+ * the stamp and reports the unchanged state.
+ */
+export function applyStampToPass(
+  input: PassStateInput,
+): { stamps: number; state: PassState } {
+  const state = derivePassState(input);
+  if (!canStampPass(state)) {
+    return { stamps: Math.max(0, Math.floor(input.stamps)), state };
+  }
+  const stamps = Math.max(0, Math.floor(input.stamps)) + 1;
+  return {
+    stamps,
+    state: derivePassState({ ...input, stamps }),
+  };
+}
+
+/**
+ * Redeem the reward on a pass. Only a pass with its reward earned
+ * moves to redeemed. Any other state comes back unchanged.
+ */
+export function redeemPass(input: PassStateInput): PassState {
+  if (derivePassState(input) !== "reward-earned") {
+    return derivePassState(input);
+  }
+  return "redeemed";
+}
+
+/**
+ * The stamp grid as a text row: one filled dot per stamp earned,
+ * one empty dot per stamp left. The Apple pass carries this as a
+ * primary field and the Google pass as a text module, so both
+ * wallets show the same grid as the app.
+ */
+export function stampGrid(stamps: number, target: number): string {
+  const safeTarget = Math.max(1, Math.floor(target));
+  const filled = Math.min(Math.max(0, Math.floor(stamps)), safeTarget);
+  return "●".repeat(filled) + "○".repeat(safeTarget - filled);
 }
 
 export interface ApplePassPayload {
@@ -216,6 +310,11 @@ export function buildApplePass(
           label: "STAMPS",
           value: `${safeStamps} of ${safeTarget}`,
         },
+        {
+          key: "grid",
+          label: "STAMP GRID",
+          value: stampGrid(safeStamps, safeTarget),
+        },
       ],
       secondaryFields: [
         { key: "reward", label: "REWARD", value: program.reward.trim() },
@@ -224,12 +323,22 @@ export function buildApplePass(
         {
           key: "stampsLeft",
           label: "TO GO",
-          value: state === "full" ? "Reward ready" : `${stampsLeft} stamps to go`,
+          value: state === "reward-earned" ? "Reward ready" : `${stampsLeft} stamps to go`,
         },
       ],
       backFields: [
         { key: "state", label: "STATUS", value: passStateLabel(state) },
         { key: "cover", label: "COVER", value: program.cover.trim() },
+        {
+          key: "terms",
+          label: "TERMS",
+          value: PASS_TERMS,
+        },
+        {
+          key: "poweredBy",
+          label: "POWERED BY",
+          value: PASS_POWERED_BY,
+        },
         {
           key: "privacy",
           label: "PRIVACY",
@@ -302,16 +411,24 @@ export function buildGooglePass(
       balance: { string: `${safeStamps} of ${safeTarget}` },
     },
     textModulesData: [
+      { header: "Business", body: program.businessName.trim(), id: "business" },
       { header: "Reward", body: program.reward.trim(), id: "reward" },
       {
         header: "To go",
         body:
-          state === "full"
+          state === "reward-earned"
             ? "Reward ready. Show this pass at the counter."
             : `${stampsLeft} stamps to go.`,
         id: "to-go",
       },
       { header: "Status", body: passStateLabel(state), id: "status" },
+      {
+        header: "Stamp grid",
+        body: stampGrid(safeStamps, safeTarget),
+        id: "stamp-grid",
+      },
+      { header: "Terms", body: PASS_TERMS, id: "terms" },
+      { header: "Powered by", body: PASS_POWERED_BY, id: "powered-by" },
     ],
     linksModuleData: {
       uris: [
@@ -370,8 +487,10 @@ export function buildPassPayloads(
 
 /**
  * Pass update after a stamp. Same as building again, with the new
- * count. Kept as its own function so the update path is explicit
- * and easy to test on its own.
+ * count and the new state. The server sends this fresh payload to
+ * the phone on each stamp, so the pass refresh always carries the
+ * state after the stamp. A stamp that completes the card flips the
+ * state to reward earned on this update.
  */
 export function updatePassOnStamp(
   program: PassProgram,

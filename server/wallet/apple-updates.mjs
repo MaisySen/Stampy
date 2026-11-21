@@ -4,7 +4,7 @@ import { PASS_TYPE_IDENTIFIER } from '../../src/lib/pass.ts';
 import { appleRegistrationProtection, appleUpdateIdentity, createAppleUpdateHandler } from './apple-update-protocol.mjs';
 export { appleUpdateIdentity } from './apple-update-protocol.mjs';
 
-const opaque=/^[A-Za-z0-9_-]{22,80}$/;
+const opaque=/^[A-Za-z0-9_-]{8,80}$/;
 const limit=2048;
 // The caller supplies a private persistent database, update secret and the SAME signer used for issuance.
 // putPass is a server-side integration point, not an HTTP route. Use committed changes from the merchant ledger.
