@@ -1,58 +1,17 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { isAbsolute } from 'node:path';
 import { PASS_TYPE_IDENTIFIER } from '../../src/lib/pass.ts';
+import { appleRegistrationProtection, appleUpdateIdentity, createAppleUpdateHandler } from './apple-update-protocol.mjs';
+export { appleUpdateIdentity } from './apple-update-protocol.mjs';
 
-const opaque = /^[A-Za-z0-9_-]{22,80}$/;
-const deviceId = /^[A-Za-z0-9_-]{16,128}$/;
-const pushId = /^(?:[0-9a-f]{2}){16,128}$/i;
-const limit = 1024 * 2;
-const fixedHeaders = {'Cache-Control':'private, no-store', 'X-Content-Type-Options':'nosniff'};
-const empty = (status) => new Response(null, {status, headers:fixedHeaders});
-const json = (data) => new Response(JSON.stringify(data), {status:200, headers:{...fixedHeaders,'Content-Type':'application/json'}});
-const mac = (key, data, encoding) => createHmac('sha256',key).update(data).digest(encoding);
-const limits = /^(?:0|[1-9]\d{0,14})$/;
-function canonicalRoot(value) {
-  const parsed = new URL(value);
-  if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== '/') throw new Error('A dedicated HTTPS Wallet origin is required.');
-  return parsed.origin;
-}
-export function appleUpdateIdentity({origin, rootKey}) {
-  if (!Buffer.isBuffer(rootKey) || rootKey.length !== 32) throw new Error('A 32-byte private Wallet update key is required.');
-  const url = new URL(canonicalRoot(origin));
-  const key = mac(rootKey, 'stampies:apple-update-auth:v1');
-  const tokenFor = (id) => {if (typeof id !== 'string' || !opaque.test(id)) throw new Error('Invalid pass ID.');return mac(key,id,'base64url');};
-  return Object.freeze({url,tokenFor});
-}
-function authorized(headers, serial, tokenFor) {
-  const input = headers.get('Authorization');
-  const auth=/^ApplePass ([A-Za-z0-9_-]{43})$/.exec(input ?? '')?.[1];
-  return auth !== undefined && timingSafeEqual(Buffer.from(auth),Buffer.from(tokenFor(serial)));
-}
-async function pushTokenOf(req) {
-  if (!/^application\/json(?:\s*;[^\r\n]*)?$/i.test(req.headers.get('Content-Type') ?? '')) return null;
-  const length = req.headers.get('Content-Length');
-  if (length !== null && (!/^\d{1,4}$/.test(length) || Number(length) > limit)) return null;
-  const reader = req.body?.getReader();
-  if (!reader) return null;
-  try {
-    const chunks=[]; let size=0;
-    for (;;) {
-      const c=await reader.read();if(c.done)break;
-      size+=c.value.length; if(size>limit){ await reader.cancel();return null; }
-      chunks.push(Buffer.from(c.value));
-    }
-    const o=JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    return typeof o?.pushToken==='string' && pushId.test(o.pushToken) ? o.pushToken.toLowerCase() : null;
-  } catch {return null;} finally {reader.releaseLock();}
-}
+const opaque=/^[A-Za-z0-9_-]{22,80}$/;
+const limit=2048;
 // The caller supplies a private persistent database, update secret and the SAME signer used for issuance.
 // putPass is a server-side integration point, not an HTTP route. Use committed changes from the merchant ledger.
 export function openAppleUpdates({dbPath, origin, rootKey, signApple}) {
   if (typeof signApple!=='function' || typeof dbPath!=='string' || !(dbPath===':memory:' || isAbsolute(dbPath))) throw new Error('A private Wallet signer and database are required.');
   const identity=appleUpdateIdentity({origin,rootKey});
-  const regKey=mac(rootKey,'stampies:apple-device:v1');
-  const encKey=mac(rootKey,'stampies:apple-push-token:v1');
+  const protection=appleRegistrationProtection(rootKey);
   const db=new DatabaseSync(dbPath);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=1000; PRAGMA foreign_keys=ON;
     CREATE TABLE IF NOT EXISTS wallet_rev (key INTEGER PRIMARY KEY CHECK(key=1), n INTEGER NOT NULL);
@@ -75,9 +34,6 @@ export function openAppleUpdates({dbPath, origin, rootKey, signApple}) {
   const transaction=(f)=>{
     db.exec('BEGIN IMMEDIATE'); try{ const x=f();db.exec('COMMIT');return x; } catch(e){db.exec('ROLLBACK');throw e;}
   };
-  // Token encryption is authenticated against the exact hashed Apple device and pass, never logged.
-  function seal(device,serial,push){ const iv=randomBytes(12), c=createCipheriv('aes-256-gcm',encKey,iv);c.setAAD(Buffer.from(`${device}:${serial}`));const ciphertext=Buffer.concat([c.update(push,'utf8'),c.final()]);return Buffer.concat([iv,c.getAuthTag(),ciphertext]); }
-  function open(device,serial,blob){const b=Buffer.from(blob),c=createDecipheriv('aes-256-gcm',encKey,b.subarray(0,12));c.setAAD(Buffer.from(`${device}:${serial}`));c.setAuthTag(b.subarray(12,28));return Buffer.concat([c.update(b.subarray(28)),c.final()]).toString('utf8');}
   const getPass=(serial)=>{
     const row=state.get(serial);if(!row)return null;
     const {_walletSourceVersion,...visible}=JSON.parse(row.payload);return visible;
@@ -103,41 +59,23 @@ export function openAppleUpdates({dbPath, origin, rootKey, signApple}) {
       save.run(record.passId,payload,version);queue.run(version,record.passId);return true;
     });
   }
-  async function handle(req) {
-    try {
-      const u=new URL(req.url);const p=u.pathname.split('/');
-      if (u.protocol!=='https:' || u.origin!==identity.url.origin || p[1]!=='v1') return empty(404);
-      if (p[2]==='passes' && p.length===5 && p[3]===PASS_TYPE_IDENTIFIER && opaque.test(p[4])) {
-        if(req.method!=='GET')return empty(405);
-        if(!authorized(req.headers,p[4],identity.tokenFor))return empty(401);
-        const row=getPass(p[4]);if(!row)return empty(404);
-        return new Response(signApple(row),{headers:{...fixedHeaders,'Content-Type':'application/vnd.apple.pkpass'}});
-      }
-      if(p[2]==='log' && p.length===3 && req.method==='POST')return empty(200); // Drop diagnostic payloads; never retain Apple device data.
-      if(p[2]!=='devices' || !deviceId.test(p[3] ?? '') || p[4]!=='registrations' || p[5]!==PASS_TYPE_IDENTIFIER) return empty(404);
-      const dev=mac(regKey,p[3],'hex');
-      if(p.length===6) {
-        if(req.method!=='GET')return empty(405);
-        const observed=u.searchParams.getAll('passesUpdatedSince');
-        if(observed.length>1 || observed.length===1&&!limits.test(observed[0]))return empty(400);
-        const found=changes.all(dev,observed.length?Number(observed[0]):0);
-        return found.length===0?empty(204):json({serialNumbers:found.map((x)=>x.serial),lastUpdated:String(found.at(-1).rev)});
-      }
-      const serial=p[6];if(p.length!==7||!opaque.test(serial ?? ''))return empty(404);
-      if(req.method!=='POST' && req.method!=='DELETE')return empty(405);
-      if(!authorized(req.headers,serial,identity.tokenFor))return empty(401);
-      if(!state.get(serial))return empty(404);
-      if(req.method==='DELETE'){unreg.run(dev,serial);return empty(200);}
-      const push=await pushTokenOf(req);if(!push)return empty(400);
-      return empty(transaction(()=>{const exists=attached.get(dev,serial);upreg.run(dev,serial,seal(dev,serial,push));return exists?200:201;}));
-    }catch{return empty(503);}
-  }
+  const handle=createAppleUpdateHandler({identity,protection,signApple,getPass,
+    listChanges:(device,since)=>changes.all(device,since),
+    register:(device,serial,push)=>transaction(()=>{
+      if(!state.get(serial))return 404;
+      const exists=attached.get(device,serial);upreg.run(device,serial,protection.seal(device,serial,push));return exists?200:201;
+    }),
+    unregister:(device,serial)=>transaction(()=>{
+      if(!state.get(serial))return 404;
+      unreg.run(device,serial);return 200;
+    }),
+  });
   // Call only from an opted-in Wallet APNs worker. Retries are at-least-once and revision safe.
   async function sendPending(sendWake,max=25) {
     if(typeof sendWake!=='function'||!Number.isInteger(max)||max<1||max>100)throw new Error('Invalid Wallet push dispatcher.');
     let sent=0;
     for(const row of ready.all(max)){
-      const status=await sendWake({topic:PASS_TYPE_IDENTIFIER,pushToken:open(row.device,row.serial,row.push)});
+      const status=await sendWake({topic:PASS_TYPE_IDENTIFIER,pushToken:protection.open(row.device,row.serial,row.push)});
       if(status==='accepted'){ack.run(row.device,row.serial,row.rev,row.push);sent++;}
       if(status==='unregistered')removeStaleReg.run(row.device,row.serial,row.push);
       // Both updates compare the encrypted registration snapshot. A concurrent registration or

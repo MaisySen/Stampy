@@ -15,13 +15,14 @@ const state = (row, passId) => {
 };
 const response = (status) => new Response(null, {status,headers:{'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});
 
-// Only the authenticated application may call mint. No public mint or stamp endpoint.
-// The two authority adapters must consult the committed merchant ledger, never client state.
-export function openWalletService({ origin, tokenDbPath, apple, google, lookupOwnedPass, now = Date.now }) {
+// The core accepts asynchronous persistence while keeping the existing SQLite API.
+// The injected adapters are private server code, not request input.
+export function createWalletService({origin, apple, google, lookupOwnedPass, now = Date.now, grantStore, openUpdates}) {
   const url = new URL(origin);
   if (url.protocol !== 'https:' || url.href !== `${url.origin}/` || typeof lookupOwnedPass !== 'function' ||
-      typeof tokenDbPath !== 'string' || !(tokenDbPath === ':memory:' || isAbsolute(tokenDbPath)) || typeof now !== 'function' ||
-      (google !== undefined && typeof google !== 'function')) throw new Error('Invalid Wallet service configuration.');
+      typeof now !== 'function' || (google !== undefined && typeof google !== 'function') ||
+      !['insertWithinCap','claim','close'].every((k) => typeof grantStore?.[k] === 'function') ||
+      (apple !== undefined && typeof openUpdates !== 'function')) throw new Error('Invalid Wallet service configuration.');
   let passStore, sender;
   if (apple !== undefined) {
     if (typeof apple.makeSigner !== 'function' || typeof apple.loadCommittedPass !== 'function' ||
@@ -31,32 +32,16 @@ export function openWalletService({ origin, tokenDbPath, apple, google, lookupOw
     const auth = appleUpdateIdentity({origin:url.origin,rootKey:apple.rootKey});
     const signApple = apple.makeSigner(auth);
     if (typeof signApple !== 'function') throw new Error('Wallet signer is required.');
-    passStore = openAppleUpdates({dbPath:apple.updateDbPath,origin:url.origin,rootKey:apple.rootKey,signApple});
+    passStore = openUpdates({origin:url.origin,rootKey:apple.rootKey,signApple});
+    if (apple.push && typeof passStore?.sendPending!=='function') throw new Error('Wallet push dispatcher is not ready.');
     sender = apple.push;
     apple = { signApple, loadCommittedPass:apple.loadCommittedPass };
   }
-  let db;
   function seconds() {
     const x = now();
     if (!Number.isSafeInteger(x) || x < 0) throw new Error('Invalid Wallet clock.');
     return Math.floor(x / 1000);
   }
-  try {
-    db=new DatabaseSync(tokenDbPath);
-    db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=1000;
-      CREATE TABLE IF NOT EXISTS wallet_issue_token (digest TEXT PRIMARY KEY, owner TEXT NOT NULL, serial TEXT NOT NULL, path TEXT NOT NULL, expires INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS wallet_issue_expiry ON wallet_issue_token(expires);
-      CREATE INDEX IF NOT EXISTS wallet_issue_serial ON wallet_issue_token(owner, serial, path);`);
-  } catch {
-    db?.close(); passStore?.close(); sender?.close(); throw new Error('Wallet capability store unavailable.');
-  }
-  const purge=db.prepare('DELETE FROM wallet_issue_token WHERE expires <= ?');
-  const held=db.prepare('SELECT COUNT(*) AS n FROM wallet_issue_token WHERE owner=? AND serial=? AND path=?');
-  const add=db.prepare('INSERT INTO wallet_issue_token(digest,owner,serial,path,expires) VALUES(?,?,?,?,?)');
-  const claim=db.prepare('DELETE FROM wallet_issue_token WHERE digest=? AND path=? AND expires>? RETURNING owner,serial');
-  const transaction=(f)=>{
-    db.exec('BEGIN IMMEDIATE'); try{const x=f(); db.exec('COMMIT'); return x;} catch(e){db.exec('ROLLBACK'); throw e;}
-  };
   let closed=false, flushing=null;
   async function mint({ownerId,passId,platform}) {
     const path=routes.get(platform);
@@ -64,22 +49,18 @@ export function openWalletService({ origin, tokenDbPath, apple, google, lookupOw
         (platform==='apple'&&!apple) || (platform==='google'&&!google)) return null;
     if (!state(await lookupOwnedPass({ownerId,passId,platform}),passId) || closed) return null;
     const t=seconds();
-    return transaction(()=>{
-      purge.run(t);
-      if (held.get(ownerId,passId,path).n>=5) return null;
-      const token=randomBytes(32).toString('base64url');
-      const expiresAt=t+90;
-      add.run(tokenDigest(token),ownerId,passId,path,expiresAt);
-      return Object.freeze({token,expiresAt:new Date(expiresAt*1000).toISOString()});
-    });
+    const token=randomBytes(32).toString('base64url');
+    const expiresAt=t+90;
+    const inserted = await grantStore.insertWithinCap({digest:tokenDigest(token),owner:ownerId,serial:passId,path,expires:expiresAt,now:t});
+    return inserted ? Object.freeze({token,expiresAt:new Date(expiresAt*1000).toISOString()}) : null;
   }
-  function project(row){
-    passStore.putPass(row.record,{sourceVersion:row.version});
+  async function project(row){
+    await passStore.putPass(row.record,{sourceVersion:row.version});
     return passStore.getPass(row.record.passId);
   }
   const issue=createWalletIssueHandler({apple:apple?.signApple,google,lookup:async (digest,path)=>{
     if (closed || !digestPattern.test(digest)) return null;
-    const token=claim.get(digest,path,seconds());
+    const token=await grantStore.claim({digest,path,now:seconds()});
     if (!token) return null;
     const platform=path==='/wallet/apple'?'apple':'google';
     const row=state(await lookupOwnedPass({ownerId:token.owner,passId:token.serial,platform}),token.serial);
@@ -113,7 +94,42 @@ export function openWalletService({ origin, tokenDbPath, apple, google, lookupOw
     if (closed) return;
     closed=true;
     try { sender?.close(); await flushing; }
-    finally { try { passStore?.close(); } finally { db.close(); } }
+    finally { try { await passStore?.close(); } finally { await grantStore.close(); } }
   }
   return Object.freeze({mint,handle,committedAppleChange,flushAppleWakes,close});
+}
+
+// Only the authenticated application may call mint. No public mint or stamp endpoint.
+// The two authority adapters must consult the committed merchant ledger, never client state.
+export function openWalletService({tokenDbPath, apple, ...options}) {
+  if (typeof tokenDbPath !== 'string' || !(tokenDbPath === ':memory:' || isAbsolute(tokenDbPath))) throw new Error('A private Wallet capability store is required.');
+  let db;
+  try {
+    db=new DatabaseSync(tokenDbPath);
+    db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=1000;
+      CREATE TABLE IF NOT EXISTS wallet_issue_token (digest TEXT PRIMARY KEY, owner TEXT NOT NULL, serial TEXT NOT NULL, path TEXT NOT NULL, expires INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS wallet_issue_expiry ON wallet_issue_token(expires);
+      CREATE INDEX IF NOT EXISTS wallet_issue_serial ON wallet_issue_token(owner, serial, path);`);
+  } catch {
+    db?.close(); throw new Error('Wallet capability store unavailable.');
+  }
+  const purge=db.prepare('DELETE FROM wallet_issue_token WHERE expires <= ?');
+  const held=db.prepare('SELECT COUNT(*) AS n FROM wallet_issue_token WHERE owner=? AND serial=? AND path=?');
+  const add=db.prepare('INSERT INTO wallet_issue_token(digest,owner,serial,path,expires) VALUES(?,?,?,?,?)');
+  const claim=db.prepare('DELETE FROM wallet_issue_token WHERE digest=? AND path=? AND expires>? RETURNING owner,serial');
+  const transaction=(f)=>{
+    db.exec('BEGIN IMMEDIATE'); try{const x=f(); db.exec('COMMIT'); return x;} catch(e){db.exec('ROLLBACK'); throw e;}
+  };
+  const grantStore = {
+    insertWithinCap:({digest,owner,serial,path,expires,now})=>transaction(()=>{
+      purge.run(now);
+      if (held.get(owner,serial,path).n>=5) return false;
+      add.run(digest,owner,serial,path,expires); return true;
+    }),
+    claim:({digest,path,now})=>claim.get(digest,path,now),
+    close:()=>db.close(),
+  };
+  try {
+    return createWalletService({...options,apple,grantStore,openUpdates:(opts)=>openAppleUpdates({...opts,dbPath:apple.updateDbPath})});
+  } catch (err) { db.close(); throw err; }
 }

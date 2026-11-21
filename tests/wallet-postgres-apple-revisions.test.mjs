@@ -1,0 +1,48 @@
+import { Pool } from 'pg';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { openPostgresAppleRevisionStore } from '../server/wallet/postgres/apple-revisions.mjs';
+
+const host=process.env.WALLET_FIXTURE_PG_SOCKET;
+if (!/^\/dev\/shm\/stampies-pg-proof\.[A-Za-z0-9]+\/socket$/.test(host ?? '')) throw new Error('Disposable Unix socket required.');
+const db={host,port:5432,database:'postgres',max:4,connectionTimeoutMillis:2000,query_timeout:7000};
+const passId='wallet_apple_synthetic_001';
+const record=(stamps,id=passId)=>({passId:id,stamps});
+
+test('real Postgres keeps Apple revisions ordered, coalesces wakes and rejects stale source versions',async (t)=>{
+ const owner=new Pool({...db,user:'fixture_owner'}); t.after(()=>owner.end());
+ const sql=readFileSync(new URL('../server/wallet/postgres/002-apple-updates.sql',import.meta.url),'utf8');
+ await owner.query(sql); await owner.query(sql);
+ await owner.query(`CREATE ROLE fixture_apple LOGIN;
+   GRANT USAGE ON SCHEMA stampies_wallet TO fixture_apple;
+   GRANT SELECT,UPDATE (revision) ON stampies_wallet.apple_clock TO fixture_apple;
+   GRANT SELECT,INSERT,UPDATE ON stampies_wallet.apple_pass,stampies_wallet.apple_wake TO fixture_apple;
+   GRANT SELECT ON stampies_wallet.apple_registration TO fixture_apple;`);
+ const l=new Pool({...db,user:'fixture_apple'}), r=new Pool({...db,user:'fixture_apple'});
+ t.after(()=>Promise.all([l.end(),r.end()]));
+ const a=openPostgresAppleRevisionStore({pool:l}), b=openPostgresAppleRevisionStore({pool:r});
+ await assert.rejects(l.query('CREATE TABLE stampies_wallet.should_deny_apple (id integer)'),{code:'42501'});
+ await assert.rejects(a.putPass(record(2)),/committed Wallet revision/);
+ assert.equal(await a.putPass(record(2),{sourceVersion:1}),true);
+ assert.deepEqual(await b.getPass(passId),record(2));
+ const dev='f'.repeat(64), readRev=async()=>Number((await owner.query('SELECT revision FROM stampies_wallet.apple_clock')).rows[0].revision);
+ assert.equal(await readRev(),1);
+ await owner.query('INSERT INTO stampies_wallet.apple_registration(device,serial,encrypted_push) VALUES ($1,$2,$3)',[dev,passId,Buffer.alloc(60,1)]);
+ assert.equal(await a.putPass(record(2),{sourceVersion:2}),false);
+ assert.equal(await readRev(),1);
+ assert.equal(await b.putPass(record(5),{sourceVersion:1}),false);
+ await assert.rejects(b.putPass(record(9),{sourceVersion:2}),/Conflicting pass source version/);
+ assert.equal(await readRev(),1);
+ const out=await Promise.all([a.putPass(record(3),{sourceVersion:3}),b.putPass(record(4),{sourceVersion:4})]);
+ assert.equal(out[1],true); assert.deepEqual(await a.getPass(passId),record(4));
+ assert.equal((await owner.query('SELECT COUNT(*)::integer AS n FROM stampies_wallet.apple_wake')).rows[0].n,1);
+ let wake=(await owner.query('SELECT revision,lease_id FROM stampies_wallet.apple_wake')).rows[0];
+ assert.equal(Number(wake.revision),await readRev()); assert.equal(wake.lease_id,null);
+ await owner.query("UPDATE stampies_wallet.apple_wake SET lease_id='2f19e13c-f423-402f-9f70-2bcaeccebeb3',lease_until=clock_timestamp()+interval '1 minute'");
+ assert.equal(await b.putPass(record(8),{sourceVersion:5}),true);
+ wake=(await owner.query('SELECT revision,lease_id,lease_until FROM stampies_wallet.apple_wake')).rows[0];
+ assert.deepEqual(wake,{revision:String(await readRev()),lease_id:null,lease_until:null});
+ await owner.query('DELETE FROM stampies_wallet.apple_registration WHERE device=$1 AND serial=$2',[dev,passId]);
+ assert.equal((await owner.query('SELECT COUNT(*)::integer AS n FROM stampies_wallet.apple_wake')).rows[0].n,0);
+});
