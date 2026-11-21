@@ -24,6 +24,14 @@ Apple calls register/unregister, change listing and pass refresh. The per-pass t
 
 Deployment still requires mounting the issued Pass Type certificate and key, stable key custody, authorised origin and persistent storage, a connected merchant ledger, configured APNs sender, and a physical install and update test.
 
+## Hosting the Wallet service
+
+`openWalletService` joins the dedicated HTTPS origin, the two signer routes and Apple’s refresh protocol. Mount its `handle` method on the trusted app server. Call `mint({ownerId, passId, platform})` only after the app authenticates the viewer; the service deliberately exposes no mint, stamp or ledger-write endpoint. `lookupOwnedPass` must check the current authenticated owner and return `{version, record}` from the committed merchant ledger for that exact pass and platform. The service only stores a hash of the single-use grant and checks the current owner again on consumption. A grant expires after 90 seconds, cannot move between platforms, and is not a URL parameter. Re-authorise and mint another after an interrupted issue.
+
+Mount private persistent SQLite storage for both the grant ledger and Apple projections. Supply the configured Apple signer through `makeSigner(identity)` so the installed card uses the same update origin and auth token. Send committed mutations through `committedAppleChange(passId)` with a monotonic merchant revision; never put public client input into that adapter. A stale source revision cannot replace newer pass state and a conflict at the same revision fails closed. Run `flushAppleWakes` from one bounded server-side scheduler and call `await close()` on shutdown. The Android signer still requires its own approved Google issuer and class; a Google Play publishing key does not supply those.
+
+These methods and synthetic tests do not create a server, merchant ledger, issuer account or store distribution. Start only against an approved host and actual merchant authority, then validate real device issue, refresh and hardware separately.
+
 ## Contactless
 
 Wallet NFC is off by default. Do not deploy a forwarding endpoint which trusts raw NFC data, a QR code or a caller-supplied count. `createWalletTapBoundary` accepts only deployment-approved Apple VAS or Google Smart Tap adapters. The adapter verifies provider signatures and reader, merchant and audience bindings. The redemption store must atomically verify the active merchant and pass, enforce the current cooldown and quota, and persist the event ID with the result. An allowed fixture event is not a hardware test.
@@ -33,3 +41,21 @@ Before enabling NFC: verify Apple’s NFC permission and appropriate Pass Type c
 ## Verification
 
 `node --test tests/wallet-server.test.mjs` uses temporary fixture keys. It checks the Apple ZIP and detached signature independently, verifies the Google JWT, and proves that unsigned, expired and repeated reader events do not lead to a second redemption in the test store. It does not prove production certificates, approved issuers, live endpoints, terminals or store builds.
+## Postgres Wallet preview
+
+The HTTP adapter and Postgres stores are opt-in server modules. The production app, CI workflow and current SQLite path are unchanged. Bring a dedicated TLS connection pool. Apply `server/wallet/postgres/001-issue-grants.sql`, `002-apple-updates.sql` and `003-apple-wake-retries.sql` in order with a separate migration owner; never give the runtime role schema ownership or DDL. Wire `openPostgresIssueGrants({pool})` and `openUpdates: (options) => openPostgresAppleUpdates({pool, ...options})` into `createWalletService`. The caller owns pool lifecycle. Keep the update HMAC/encryption root private and stable. No merchant grant, stamp state or signing key is accepted from a device.
+
+With Node 22.23.2 and the fixture-only `pg@8.16.3` driver, use a fresh disposable Postgres 15 cluster listening only on a Unix socket. The integration tests deliberately refuse non-fixture paths. Run from a disposable checkout with no real credentials. Initialise with local trust only inside a private directory, host authentication rejected, UTF-8 and owner role `fixture_owner`. Use `mktemp -d /dev/shm/stampies-pg-proof.XXXXXX`, its `socket` subdirectory (mode 0700), and `WALLET_FIXTURE_PG_SOCKET` pointing to that subdirectory. Start the fixture without TCP listeners, run the suite below, then shut down and remove the disposable cluster. The test creates its own runtime roles and a separate test database; never target a shared or hosted database.
+
+```sh
+# Install the test-only driver in this disposable checkout, not in the app or release lockfile.
+npm install --no-save --package-lock=false --ignore-scripts pg@8.16.3
+node --experimental-sqlite --test --test-concurrency=1 tests/wallet-server.test.mjs tests/wallet-service.test.mjs tests/wallet-http.test.mjs tests/wallet-postgres-*.test.mjs
+```
+
+The fixture proves single-use issuance, Apple registration/rotation, change cursors, protected refresh and unregister against real Postgres, with synthetic records and signer. Invoking a signer locally is not proof of real device refresh. A signed static test card was installed on an iPhone; it is not the updateable pass. The hosted adapter, actual Google issuer/class, production credentials, configured APNs delivery and a physical update test are still separate. Postgres push is opt-in and is inactive if no sender is configured. No DNS or store release is implied by this branch.
+
+
+### Postgres Apple push queue
+
+Use `flushAppleWakes` only from a private scheduled job and pass the exact Wallet APNs sender to the service. Postgres leases one pending wake at a time without holding a transaction across the call to Apple. A delivery receipt can clear only its own live lease, revision and encrypted registration. Definitive unregistration can remove only that unchanged registration. The scheduled runner processes at most four by default, backs off transient failures, and stops retrying the same revision after eight failures; a new pass revision or rotated device token resets delivery. An expired lease is recoverable, so Apple may receive a repeat wake, never a repeat stamp. Grant the runtime access to the dedicated schema and exact table/column operations, not ownership or DDL. Keep APNs tokens out of logs. The offline dispatcher tests prove concurrency and retry behaviour only; they do not connect to APNs or a production database.
