@@ -12,7 +12,6 @@ import {
 } from "./src/data";
 import type { BusinessState, Customer, StampMethod } from "./src/data";
 import { dayString } from "./src/lib/fraud";
-import { passShareLink } from "./src/lib/pass";
 import { BottomNav } from "./src/components/BottomNav";
 import type { TabKey } from "./src/components/BottomNav";
 import { WalletScreen } from "./src/screens/WalletScreen";
@@ -102,7 +101,6 @@ export default function App() {
             stamps={stamps}
             target={STAMPS_TO_REWARD}
             platform={Platform.OS === "ios" ? "apple" : "google"}
-            shareLink={passShareLink(business.name)}
             onClose={() => setInstallOpen(false)}
           />
         </ScrollView>
@@ -128,7 +126,7 @@ export default function App() {
             stamps={stamps}
             onRedeem={redeemReward}
             onGoToStamp={() => setTab("stamp")}
-            onAddToWallet={() => setInstallOpen(true)}
+            onPreviewWallet={() => setInstallOpen(true)}
           />
         )}
         {tab === "stamp" && (

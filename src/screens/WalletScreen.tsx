@@ -12,6 +12,7 @@ interface WalletScreenProps {
   stamps: number;
   onRedeem: () => void;
   onGoToStamp: () => void;
+  onPreviewWallet: () => void;
 }
 
 export function WalletScreen({
@@ -20,6 +21,7 @@ export function WalletScreen({
   stamps,
   onRedeem,
   onGoToStamp,
+  onPreviewWallet,
 }: WalletScreenProps) {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const rewardReady = stamps >= STAMPS_TO_REWARD;
@@ -62,6 +64,15 @@ export function WalletScreen({
       )}
 
       <StampCard businessName={businessName} stamps={stamps} reward={reward} />
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Preview Wallet pass"
+        activeOpacity={0.85}
+        onPress={onPreviewWallet}
+        style={[styles.actionButton, styles.previewButton]}
+      >
+        <Text style={styles.actionButtonText}>Preview Wallet pass</Text>
+      </TouchableOpacity>
 
       <View style={[shared.card, styles.actionCard]}>
         <View>
@@ -235,6 +246,10 @@ const styles = StyleSheet.create({
   nudgeText: {
     flex: 1,
     gap: 4,
+  },
+  previewButton: {
+    alignSelf: "stretch",
+    marginTop: spacing.gap,
   },
   privacy: {
     color: colors.faint,

@@ -55,3 +55,5 @@ run(
 );
 
 run(`node --test ${outDir}/tests/*.test.js`);
+
+run("node --test tests/wallet-preview-ui.test.mjs");
