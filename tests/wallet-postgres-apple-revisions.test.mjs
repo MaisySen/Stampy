@@ -12,7 +12,7 @@ const record=(stamps,id=passId)=>({passId:id,stamps});
 
 test('real Postgres keeps Apple revisions ordered, coalesces wakes and rejects stale source versions',async (t)=>{
  const owner=new Pool({...db,user:'fixture_owner'}); t.after(()=>owner.end());
- const sql=readFileSync(new URL('../server/wallet/postgres/002-apple-updates.sql',import.meta.url),'utf8');
+ const sql=['002-apple-updates','003-apple-wake-retries'].map(name=>readFileSync(new URL(`../server/wallet/postgres/${name}.sql`,import.meta.url),'utf8')).join('\n');
  await owner.query(sql); await owner.query(sql);
  await owner.query(`CREATE ROLE fixture_apple LOGIN;
    GRANT USAGE ON SCHEMA stampies_wallet TO fixture_apple;

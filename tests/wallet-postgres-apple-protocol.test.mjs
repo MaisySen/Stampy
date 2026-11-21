@@ -23,7 +23,7 @@ async function setup(t){
   await admin.query('CREATE DATABASE wallet_protocol');
   const opt={...base,database:'wallet_protocol'};
   const owner=new Pool({...opt,user:'fixture_owner'}); t.after(()=>owner.end());
-  for(const m of ['001-issue-grants','002-apple-updates']) await owner.query(readFileSync(new URL(`../server/wallet/postgres/${m}.sql`,import.meta.url),'utf8'));
+  for(const m of ['001-issue-grants','002-apple-updates','003-apple-wake-retries']) await owner.query(readFileSync(new URL(`../server/wallet/postgres/${m}.sql`,import.meta.url),'utf8'));
   await owner.query(`CREATE ROLE wallet_protocol_runtime LOGIN;
     GRANT USAGE ON SCHEMA stampies_wallet TO wallet_protocol_runtime;
     GRANT SELECT,INSERT,DELETE ON stampies_wallet.issue_grants TO wallet_protocol_runtime;
@@ -41,7 +41,7 @@ test('Apple HTTP issue, register, list, refresh and unsubscribe are durable and 
   const makeSigner=(identity)=>{auth=identity; return (record)=>Buffer.from(JSON.stringify(record));}; // Deliberately synthetic signer, no live keys.
   const settings=(pool)=>({origin,lookupOwnedPass:lookup,grantStore:openPostgresIssueGrants({pool}),openUpdates:opts=>openPostgresAppleUpdates({pool,...opts}),apple:{rootKey,makeSigner,loadCommittedPass:load}});
   const l=createWalletService(settings(a)), r=createWalletService(settings(b)); t.after(()=>Promise.all([l.close(),r.close()]));
-  const bad=settings(a); bad.apple.push={sendWake:async()=>{throw Error('must not dispatch');},close:()=>{}};
+  const bad=settings(a); bad.openUpdates=(options)=>{const {sendPending,...readOnly}=openPostgresAppleUpdates({pool:a,...options}); return readOnly;}; bad.apple.push={sendWake:async()=>{throw Error('must not dispatch');},close:()=>{}};
   assert.throws(()=>createWalletService(bad),/push dispatcher is not ready/);
   await assert.rejects(a.query('CREATE TABLE stampies_wallet.forbidden_test(id int)'),{code:'42501'});
   const minted=await l.mint({ownerId:merchant,passId,platform:'apple'}); assert.match(minted.token,/^[A-Za-z0-9_-]{43}$/);

@@ -1,5 +1,6 @@
 import { appleRegistrationProtection, appleUpdateIdentity, createAppleUpdateHandler } from '../apple-update-protocol.mjs';
 import { openPostgresAppleRevisionStore } from './apple-revisions.mjs';
+import { openPostgresAppleWakeDispatch } from './apple-wake-dispatch.mjs';
 import { walletPgTransaction } from './issue-grants.mjs';
 
 const maxDevicePasses=128;
@@ -31,7 +32,7 @@ export function openPostgresAppleUpdates({pool, origin, rootKey, signApple}) {
       // Initial/rotated registration reconciles a pass changed between Issue and Add.
       await db.query(`INSERT INTO stampies_wallet.apple_wake(device,serial,revision) VALUES ($1,$2,$3)
         ON CONFLICT(device,serial) DO UPDATE SET revision=EXCLUDED.revision,
-        ready_at=EXCLUDED.ready_at,lease_id=NULL,lease_until=NULL`,[device,serial,revision]);
+        ready_at=EXCLUDED.ready_at,lease_id=NULL,lease_until=NULL,failures=0`,[device,serial,revision]);
       return previous?200:201;
     });
   }
@@ -52,5 +53,6 @@ export function openPostgresAppleUpdates({pool, origin, rootKey, signApple}) {
     return rows;
   }
   const handle=createAppleUpdateHandler({identity,protection,signApple,getPass,register,unregister,listChanges});
-  return Object.freeze({handle,getPass,putPass,close:()=>{}});
+  const {sendPending}=openPostgresAppleWakeDispatch({pool,rootKey});
+  return Object.freeze({handle,getPass,putPass,sendPending,close:()=>{}});
 }

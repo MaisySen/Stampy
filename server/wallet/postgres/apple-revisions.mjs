@@ -37,7 +37,7 @@ export function openPostgresAppleRevisionStore({pool}) {
       await db.query(`INSERT INTO stampies_wallet.apple_wake(device,serial,revision)
         SELECT device,serial,$1 FROM stampies_wallet.apple_registration WHERE serial=$2
         ON CONFLICT(device,serial) DO UPDATE SET revision=EXCLUDED.revision,
-        ready_at=EXCLUDED.ready_at,lease_id=NULL,lease_until=NULL`,[revision,serial]);
+        ready_at=EXCLUDED.ready_at,lease_id=NULL,lease_until=NULL,failures=0`,[revision,serial]);
       return true;
     });
   }
