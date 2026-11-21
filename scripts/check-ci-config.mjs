@@ -8,6 +8,7 @@ const {expo: app} = json('app.json');
 assert.equal(app.name, 'Stampies');
 assert.equal(app.slug, 'stampies');
 assert.equal(app.scheme, 'stampies');
+assert.equal(typeof app.extra.walletOrigin, 'string', 'walletOrigin must be a string (empty means unconfigured)');
 assert.equal(app.ios.bundleIdentifier, 'au.fintex.stampies');
 assert.equal(app.android.package, 'au.fintex.stampies');
 const eas = json('eas.json');

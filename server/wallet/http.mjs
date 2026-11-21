@@ -33,7 +33,8 @@ export function createWalletHttpServer({ origin, service }) {
       const hasFraming = Boolean(fields['transfer-encoding'] || (length && length !== '0'));
       if (target === '/healthz' && method === 'GET' && !hasFraming) return fail(res, 204);
       const issuance = rawPath === '/wallet/apple' || rawPath === '/wallet/google';
-      if (!issuance && !rawPath.startsWith('/v1/')) return fail(res, 404);
+      const stampIntake = rawPath === '/wallet/stamps';
+      if (!issuance && !stampIntake && !rawPath.startsWith('/v1/')) return fail(res, 404);
       const headers = new Headers();
       for (const key of forwardedHeaders) {
         if (fields[key]?.length === 1) headers.set(key, fields[key][0]);

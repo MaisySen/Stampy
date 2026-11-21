@@ -4,9 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { appleUpdateIdentity } from './apple-updates.mjs';
 import { createAppleWalletPushSender } from './apple-push.mjs';
 import { createAppleSigner } from './signing.mjs';
-import { createWalletService } from './service.mjs';
-import { openPostgresIssueGrants } from './postgres/issue-grants.mjs';
-import { openPostgresAppleUpdates } from './postgres/apple-registrations.mjs';
+import { openPostgresWalletService } from './postgres/service.mjs';
 
 const DEFAULT_INTERVAL_MS = 30000;
 const REQUIRED = [
@@ -164,10 +162,11 @@ async function main() {
     // The worker never mints, issues or reads the merchant ledger. It only
     // drains wakes the issuing service already queued, so both ledger adapters
     // are inert functions. The service still validates their shape at open.
-    const service = createWalletService({
+    // Opening through openPostgresWalletService verifies the restricted
+    // runtime role first; a wrongly privileged login fails fast here.
+    const service = await openPostgresWalletService({
+      pool,
       origin: config.origin,
-      grantStore: openPostgresIssueGrants({ pool }),
-      openUpdates: (options) => openPostgresAppleUpdates({ pool, ...options }),
       lookupOwnedPass: async () => null,
       apple: {
         rootKey: config.rootKey,

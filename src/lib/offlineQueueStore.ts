@@ -18,7 +18,7 @@
  * mirror. Call flush when the app backgrounds, best effort, to push the
  * latest write out before the process is suspended.
  */
-import type { OfflineQueueStore, QueuedStamp } from "./offlineQueue.js";
+import type { OfflineQueueStore, QueuedStamp } from "./offlineQueue";
 import type { AsyncStorageStatic } from "@react-native-async-storage/async-storage";
 
 export const OFFLINE_QUEUE_STORAGE_KEY = "stampies:offline-stamps:v1";

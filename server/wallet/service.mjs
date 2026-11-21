@@ -3,6 +3,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { isAbsolute } from 'node:path';
 import { appleUpdateIdentity, openAppleUpdates } from './apple-updates.mjs';
 import { createWalletIssueHandler } from './signing.mjs';
+import { createStampIntakeHandler } from './stamp-intake.mjs';
+import { openSqliteStampLedger } from './stamp-ledger.mjs';
 
 const routes = new Map([['apple', '/wallet/apple'], ['google', '/wallet/google']]);
 const opaque = /^[A-Za-z0-9_-]{22,80}$/;
@@ -17,11 +19,12 @@ const response = (status) => new Response(null, {status,headers:{'Cache-Control'
 
 // The core accepts asynchronous persistence while keeping the existing SQLite API.
 // The injected adapters are private server code, not request input.
-export function createWalletService({origin, apple, google, lookupOwnedPass, now = Date.now, grantStore, openUpdates}) {
+export function createWalletService({origin, apple, google, lookupOwnedPass, now = Date.now, grantStore, stampStore, openUpdates}) {
   const url = new URL(origin);
   if (url.protocol !== 'https:' || url.href !== `${url.origin}/` || typeof lookupOwnedPass !== 'function' ||
       typeof now !== 'function' || (google !== undefined && typeof google !== 'function') ||
       !['insertWithinCap','claim','close'].every((k) => typeof grantStore?.[k] === 'function') ||
+      (stampStore !== undefined && !['record','count'].every((k) => typeof stampStore?.[k] === 'function')) ||
       (apple !== undefined && typeof openUpdates !== 'function')) throw new Error('Invalid Wallet service configuration.');
   let passStore, sender;
   if (apple !== undefined) {
@@ -74,6 +77,11 @@ export function createWalletService({origin, apple, google, lookupOwnedPass, now
       if (requested.search || requested.hash) return response(404);
       return issue(request);
     }
+    if (requested.pathname==='/wallet/stamps') {
+      if (requested.search || requested.hash) return response(404);
+      if (request.method!=='POST') return response(405);
+      return stampIntake ? stampIntake(request) : response(503);
+    }
     if (requested.pathname.startsWith('/v1/')) return passStore ? passStore.handle(request) : response(404);
     return response(404);
   }
@@ -83,6 +91,16 @@ export function createWalletService({origin, apple, google, lookupOwnedPass, now
     if (!row || closed) return false;
     return passStore.putPass(row.record,{sourceVersion:row.version});
   }
+  // Stamp intake needs the committed merchant ledger to verify the pass
+  // and business, and the Apple update path to queue the pass refresh.
+  // Without either, POST /wallet/stamps answers 503. The stamp itself is
+  // recorded first; the refresh is best effort and never fails the stamp.
+  const stampIntake = (stampStore && apple) ? createStampIntakeHandler({
+    stampStore,
+    loadCommittedPass: apple.loadCommittedPass,
+    now,
+    onRecorded: (passId) => committedAppleChange(passId).catch(() => {}),
+  }) : null;
   // Call from one bounded scheduler. Overlapping calls share the same flight.
   const flushAppleWakes=()=>{
     if (closed || !sender) return Promise.resolve(0);
@@ -130,6 +148,6 @@ export function openWalletService({tokenDbPath, apple, ...options}) {
     close:()=>db.close(),
   };
   try {
-    return createWalletService({...options,apple,grantStore,openUpdates:(opts)=>openAppleUpdates({...opts,dbPath:apple.updateDbPath})});
+    return createWalletService({...options,apple,grantStore,stampStore:openSqliteStampLedger(db),openUpdates:(opts)=>openAppleUpdates({...opts,dbPath:apple.updateDbPath})});
   } catch (err) { db.close(); throw err; }
 }

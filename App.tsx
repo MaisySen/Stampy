@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Platform, ScrollView, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { colors, shared } from "./src/theme";
@@ -12,7 +12,13 @@ import {
 } from "./src/data";
 import type { BusinessState, Customer, StampMethod } from "./src/data";
 import { dayString } from "./src/lib/fraud";
-import { passShareLink } from "./src/lib/pass";
+import { businessSlug, passShareLink } from "./src/lib/pass";
+import { OfflineStampQueue } from "./src/lib/offlineQueue";
+import { startOfflineStampQueue } from "./src/lib/offlineQueueStartup";
+import { createOfflineSyncDrain } from "./src/lib/offlineSync";
+import { createStampSenderForOrigin } from "./src/lib/stampSender";
+import { walletOrigin } from "./src/lib/walletConfig";
+import type { OfflineSyncDrain } from "./src/lib/offlineSync";
 import { BottomNav } from "./src/components/BottomNav";
 import type { TabKey } from "./src/components/BottomNav";
 import { WalletScreen } from "./src/screens/WalletScreen";
@@ -39,6 +45,45 @@ export default function App() {
   const [nfcOn, setNfcOn] = useState(false);
   const [staffCode, setStaffCode] = useState(DEMO_STAFF_CODE);
 
+  // The offline stamp queue, started once at app startup. The queue
+  // is created after the persistent store hydrates, so a queued stamp
+  // survives an app restart. Startup never throws and never blocks
+  // the app: a storage failure falls back to an in-memory queue, and
+  // stamping still works. Each stamp is queued here as well as
+  // applied locally, so the queue is the outbox for server sync.
+  // The pass id is the demo customer's pass for this business;
+  // server sync replaces it with the real pass serial.
+  // The sync drain starts with the queue. Its sender comes from the
+  // Wallet origin in app.json extra: when walletOrigin is set, the
+  // real sender posts each queued stamp to POST /wallet/stamps and
+  // resolves only on a 200 response. When it is empty, the drain
+  // keeps the unconfigured stub sender, leaves stamps queued, and
+  // burns no retry. Stamping works normally with sync unconfigured,
+  // and a sender failure never blocks stamping. The drain does not
+  // change for the swap.
+  const queueRef = useRef<OfflineStampQueue | null>(null);
+  const syncRef = useRef<OfflineSyncDrain | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    startOfflineStampQueue().then((queue) => {
+      if (cancelled) {
+        return;
+      }
+      queueRef.current = queue;
+      const drain = createOfflineSyncDrain(
+        queue,
+        createStampSenderForOrigin(walletOrigin()),
+      );
+      syncRef.current = drain;
+      drain.start();
+    });
+    return () => {
+      cancelled = true;
+      syncRef.current?.stop();
+      syncRef.current = null;
+    };
+  }, []);
+
   function addStamp(method: StampMethod) {
     if (stamps >= STAMPS_TO_REWARD) {
       return;
@@ -46,13 +91,23 @@ export default function App() {
     const next = stamps + 1;
     setStamps(next);
     const now = new Date();
+    const stampId = `r-${now.getTime()}`;
     setLastStampAtMs(now.getTime());
     setLastStampDay(dayString(now));
+    // Queue the stamp for server sync as well as applying it locally.
+    // The queue may not be ready yet on a very early stamp; the local
+    // stamp still applies. A failed or missing store never blocks this.
+    queueRef.current?.enqueue({
+      id: stampId,
+      passId: `stampies-${businessSlug(business.name)}`,
+      businessId: businessSlug(business.name),
+      createdAtMs: now.getTime(),
+    });
     setBusiness((prev) => ({
       ...prev,
       recent: [
         {
-          id: `r-${Date.now()}`,
+          id: stampId,
           customer: "You",
           method,
           time: "Just now",

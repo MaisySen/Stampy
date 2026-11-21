@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {Pool} from 'pg';
 import {verifyWalletRuntimeRole} from '../server/wallet/postgres/runtime-role.mjs';
+import {openPostgresStampLedger} from '../server/wallet/postgres/stamp-ledger.mjs';
 import {openPostgresIssueGrants} from '../server/wallet/postgres/issue-grants.mjs';
 import {openPostgresAppleRevisionStore} from '../server/wallet/postgres/apple-revisions.mjs';
 const host=process.env.WALLET_FIXTURE_PG_SOCKET;
@@ -12,7 +13,7 @@ const opt={host,database:'postgres',max:3,connectionTimeoutMillis:1500,query_tim
 const failScoped=(pool)=>assert.rejects(verifyWalletRuntimeRole(pool), /^Error: Wallet database access is not restricted\.$/);
 const setup=async(t)=>{
   const admin=new Pool({...opt,user:'fixture_owner'});t.after(()=>admin.end());
-  for(const f of ['001-issue-grants.sql','002-apple-updates.sql','003-apple-wake-retries.sql'])
+  for(const f of ['001-issue-grants.sql','002-apple-updates.sql','003-apple-wake-retries.sql','004-stamp-intake.sql'])
     await admin.query(read(`../server/wallet/postgres/${f}`));
   await admin.query(read('../server/wallet/postgres/provision-runtime-role.sql'));
   // Login only in this disposable, socket-only fixture; no network or password.
@@ -24,7 +25,7 @@ const setup=async(t)=>{
 
 test('exact restricted role runs real Wallet operations and refuses broadened authority',async(t)=>{
   const {admin,runtime,other}=await setup(t);
-  await t.test('matches the real migrated five-table contract',async()=>assert.equal(await verifyWalletRuntimeRole(runtime),true));
+  await t.test('matches the real migrated six-table contract',async()=>assert.equal(await verifyWalletRuntimeRole(runtime),true));
   await t.test('denies owner and unrelated login',async()=>{await failScoped(admin); await failScoped(other);});
   await t.test('real Wallet grant inserts and selectively consumes',async()=>{
     const st=openPostgresIssueGrants({pool:runtime}); const digest='a'.repeat(64);
@@ -38,6 +39,14 @@ test('exact restricted role runs real Wallet operations and refuses broadened au
   await t.test('rejects DDL, truncate, other schema reads, and rewriting a pass serial',async()=>{
     for(const sql of ['CREATE TABLE stampies_wallet.extra(id int)','TRUNCATE stampies_wallet.issue_grants','SELECT * FROM parallel_work.private_data','UPDATE stampies_wallet.apple_pass SET serial=serial'])
       await assert.rejects(runtime.query(sql),e=>e?.code==='42501');
+  });
+  await t.test('runtime role records stamps exactly once',async()=>{
+    const st=openPostgresStampLedger({pool:runtime});
+    const stamp={stampId:'wallet_role_stamp_00000001',passId:'wallet_role_synthetic_001',businessId:'corner-cafe',createdAtMs:1000};
+    assert.deepEqual(await st.record(stamp),{status:'recorded',stamps:1});
+    assert.deepEqual(await st.record(stamp),{status:'duplicate',stamps:1});
+    assert.deepEqual(await st.record({...stamp,passId:'wallet_role_synthetic_002'}),{status:'conflict',stamps:0});
+    assert.equal(await st.count('wallet_role_synthetic_001'),1);
   });
   await t.test('refuses write permission broadening and restores after the exact grant is removed',async()=>{
     await admin.query('GRANT UPDATE ON stampies_wallet.issue_grants TO stampies_wallet_runtime');await failScoped(runtime);

@@ -11,7 +11,8 @@ WITH actor AS (
   ('apple_clock',false,false,ARRAY['revision']),
   ('apple_pass',true,false,ARRAY['payload','source_version','revision']),
   ('apple_registration',true,true,ARRAY['encrypted_push']),
-  ('apple_wake',true,true,ARRAY['revision','ready_at','lease_id','lease_until','failures'])
+  ('apple_wake',true,true,ARRAY['revision','ready_at','lease_id','lease_until','failures']),
+  ('stamp_ledger',true,false,ARRAY[]::text[])
 ), matched AS (
   SELECT c.oid,e.ins,e.del,e.update_cols FROM expected e
   JOIN wallet_ns n ON true
@@ -50,6 +51,6 @@ export async function verifyWalletRuntimeRole(pool) {
     if(result.rowCount===1) row=result.rows[0];
   } catch { throw new Error('Wallet database access could not be verified.'); }
   const flags=['role_ok','no_role_membership','schema_ok','no_database_create','no_persistent_schema_create','exact_grants','no_other_object_grants'];
-  if (row?.matched_count!==5 || !flags.every(k=>row[k]===true)) throw new Error('Wallet database access is not restricted.');
+  if (row?.matched_count!==6 || !flags.every(k=>row[k]===true)) throw new Error('Wallet database access is not restricted.');
   return true;
 }

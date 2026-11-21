@@ -45,7 +45,8 @@
     "extra": {
       "eas": {
         "projectId": "6b763cc2-7374-441c-bb17-04c5c4b7710c"
-      }
+      },
+      "walletOrigin": ""
     }
   }
 }
