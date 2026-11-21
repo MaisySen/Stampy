@@ -24,6 +24,14 @@ Apple calls register/unregister, change listing and pass refresh. The per-pass t
 
 Deployment still requires mounting the issued Pass Type certificate and key, stable key custody, authorised origin and persistent storage, a connected merchant ledger, configured APNs sender, and a physical install and update test.
 
+## Hosting the Wallet service
+
+`openWalletService` joins the dedicated HTTPS origin, the two signer routes and Apple’s refresh protocol. Mount its `handle` method on the trusted app server. Call `mint({ownerId, passId, platform})` only after the app authenticates the viewer; the service deliberately exposes no mint, stamp or ledger-write endpoint. `lookupOwnedPass` must check the current authenticated owner and return `{version, record}` from the committed merchant ledger for that exact pass and platform. The service only stores a hash of the single-use grant and checks the current owner again on consumption. A grant expires after 90 seconds, cannot move between platforms, and is not a URL parameter. Re-authorise and mint another after an interrupted issue.
+
+Mount private persistent SQLite storage for both the grant ledger and Apple projections. Supply the configured Apple signer through `makeSigner(identity)` so the installed card uses the same update origin and auth token. Send committed mutations through `committedAppleChange(passId)` with a monotonic merchant revision; never put public client input into that adapter. A stale source revision cannot replace newer pass state and a conflict at the same revision fails closed. Run `flushAppleWakes` from one bounded server-side scheduler and call `await close()` on shutdown. The Android signer still requires its own approved Google issuer and class; a Google Play publishing key does not supply those.
+
+These methods and synthetic tests do not create a server, merchant ledger, issuer account or store distribution. Start only against an approved host and actual merchant authority, then validate real device issue, refresh and hardware separately.
+
 ## Contactless
 
 Wallet NFC is off by default. Do not deploy a forwarding endpoint which trusts raw NFC data, a QR code or a caller-supplied count. `createWalletTapBoundary` accepts only deployment-approved Apple VAS or Google Smart Tap adapters. The adapter verifies provider signatures and reader, merchant and audience bindings. The redemption store must atomically verify the active merchant and pass, enforce the current cooldown and quota, and persist the event ID with the result. An allowed fixture event is not a hardware test.
