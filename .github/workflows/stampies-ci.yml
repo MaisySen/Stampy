@@ -2,6 +2,9 @@ name: Stampies CI
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - review/stampies-build16-20261122
 
 permissions:
   contents: read
@@ -38,7 +41,14 @@ jobs:
           set -euo pipefail
           npm run typecheck
           npm test
-          node --experimental-sqlite --test tests/wallet-server.test.mjs
+          npm run scan
+          node --experimental-sqlite --test \
+            tests/wallet-server.test.mjs \
+            tests/wallet-service.test.mjs \
+            tests/wallet-http.test.mjs \
+            tests/wallet-stamp-intake.test.mjs \
+            tests/wallet-google-updates.test.mjs \
+            tests/wallet-push-worker.test.mjs
           python3 scripts/make-assets.py
           node scripts/check-ci-config.mjs
           ./node_modules/.bin/expo export --platform android --max-workers 2 --output-dir dist/ci-android
