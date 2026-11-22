@@ -14,8 +14,7 @@ GRANT USAGE ON SCHEMA stampies_loyalty TO stampies_loyalty_runtime;
 GRANT SELECT, INSERT ON stampies_loyalty.locations TO stampies_loyalty_runtime;
 GRANT SELECT, INSERT ON stampies_loyalty.programs TO stampies_loyalty_runtime;
 GRANT SELECT, INSERT ON stampies_loyalty.enrollment_grants TO stampies_loyalty_runtime;
-GRANT DELETE (digest, merchant_id, program_id, expires_at)
-  ON stampies_loyalty.enrollment_grants TO stampies_loyalty_runtime;
+GRANT DELETE ON stampies_loyalty.enrollment_grants TO stampies_loyalty_runtime;
 GRANT SELECT, INSERT ON stampies_loyalty.memberships TO stampies_loyalty_runtime;
 GRANT UPDATE (balance, lifetime_stamps, rewards_redeemed, updated_at)
   ON stampies_loyalty.memberships TO stampies_loyalty_runtime;
