@@ -23,6 +23,7 @@ import {
   cardStatus,
   emptyLedger,
   loadLedger,
+  newEpoch,
   markHandedToQueue,
   redeem,
 } from "./src/lib/ledger";
@@ -66,6 +67,8 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
   const [programProblem, setProgramProblem] = useState<string | null>(null);
   const [ledgerProblem, setLedgerProblem] = useState<string | null>(null);
   const [saveProblem, setSaveProblem] = useState<string | null>(null);
+  const [handoffProblem, setHandoffProblem] = useState<string | null>(null);
+  const [queueConflicts, setQueueConflicts] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [queueState, setQueueState] = useState<QueueState>({ phase: "starting" });
   const [business, setBusiness] = useState<BusinessState>(demoBusiness);
@@ -95,7 +98,6 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
   const controllerRef = useRef<StampQueueController | null>(null);
   const syncRef = useRef<OfflineSyncDrain | null>(null);
   const drainedQueueRef = useRef<unknown>(null);
-  const handingRef = useRef(false);
   if (controllerRef.current === null) {
     controllerRef.current = new StampQueueController(
       queueStoreFactory ?? createAsyncStorageQueueStore,
@@ -111,53 +113,81 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
     }
   }, []);
 
-  const handOff = useCallback(async () => {
+  const handingRef = useRef(false);
+  const rehandRef = useRef(false);
+
+  const handOff = useCallback(async (): Promise<void> => {
     const controller = controllerRef.current;
-    if (controller === null || handingRef.current) {
+    if (controller === null) {
       return;
     }
-    const state = controller.state;
-    if (state.phase !== "durable") {
+    if (handingRef.current) {
+      // A handoff is running. Run once more when it ends, so a stamp that
+      // arrived meanwhile is not left behind.
+      rehandRef.current = true;
       return;
     }
     handingRef.current = true;
     try {
-      const outbox = ledgerRef.current.outbox;
-      if (outbox.length === 0) {
-        return;
-      }
-      const slug = businessSlug(programRef.current.name);
-      const ids = handOutboxToQueue(state.queue, outbox, `stampies-${slug}`, slug);
-      if (await controller.flush()) {
-        commitLedger(markHandedToQueue(ledgerRef.current, ids));
-      }
+      do {
+        rehandRef.current = false;
+        const state = controller.state;
+        if (state.phase !== "durable") {
+          break;
+        }
+        const outbox = ledgerRef.current.outbox;
+        if (outbox.length === 0) {
+          setHandoffProblem(null);
+          break;
+        }
+        const slug = businessSlug(programRef.current.name);
+        const { handed, conflicts } = handOutboxToQueue(
+          state.queue,
+          outbox,
+          `stampies-${slug}`,
+          slug,
+        );
+        setQueueConflicts(conflicts.length);
+        if (handed.length === 0) {
+          continue;
+        }
+        const flushed = await controller.flush();
+        const stillActive =
+          controller.state.phase === "durable" && controller.state.queue === state.queue;
+        if (flushed && stillActive) {
+          commitLedger(markHandedToQueue(ledgerRef.current, handed));
+          setHandoffProblem(null);
+        } else if (!stillActive) {
+          // The queue changed while writing. Try again with the new one.
+          rehandRef.current = true;
+        } else {
+          setHandoffProblem(
+            "Could not write to the sync queue. Stamps stay saved here and nothing is lost.",
+          );
+        }
+      } while (rehandRef.current);
     } finally {
       handingRef.current = false;
     }
   }, [commitLedger]);
 
-  const loadSaved = useCallback(async () => {
-    let backend = backendRef.current;
-    if (backend === null) {
-      try {
-        backend = await loadAsyncStorageBackend();
-        backendRef.current = backend;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Storage is not available.";
-        setProgramProblem(`Saved program could not be read: ${message}`);
-        setLedgerProblem(`Saved stamp progress could not be read: ${message}`);
-        setLoaded(true);
-        return;
-      }
+  const ensureBackend = useCallback(async (): Promise<KeyValueBackend | null> => {
+    if (backendRef.current !== null) {
+      return backendRef.current;
     }
-    if (persisterRef.current === null) {
-      persisterRef.current = new LedgerPersister(backend);
+    try {
+      backendRef.current = await loadAsyncStorageBackend();
+      return backendRef.current;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Storage is not available.";
+      setProgramProblem(`Saved program could not be read: ${message}`);
+      setLedgerProblem(`Saved stamp progress could not be read: ${message}`);
+      return null;
     }
-    const persister = persisterRef.current;
-    const [programLoad, ledgerLoad] = await Promise.all([
-      loadProgram(backend),
-      loadLedger(backend),
-    ]);
+  }, []);
+
+  const loadProgramState = useCallback(async (backend: KeyValueBackend) => {
+    const programLoad = await loadProgram(backend);
     programRef.current = programLoad.settings;
     setProgram(programLoad.settings);
     setProgramProblem(
@@ -165,18 +195,63 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
         ? `${programLoad.message} Showing the default program.`
         : null,
     );
-    if (ledgerLoad.status === "invalid" || ledgerLoad.status === "error") {
-      persister.blockWrites(true);
-      setLedgerProblem(`${ledgerLoad.message} Stamping is off so the saved copy is not overwritten.`);
-    } else {
-      persister.blockWrites(false);
-      setLedgerProblem(null);
+  }, []);
+
+  const loadLedgerState = useCallback(
+    async (backend: KeyValueBackend) => {
+      if (persisterRef.current === null) {
+        persisterRef.current = new LedgerPersister(backend);
+      }
+      const persister = persisterRef.current;
+      const ledgerLoad = await loadLedger(backend);
+      if (ledgerLoad.status === "invalid" || ledgerLoad.status === "error") {
+        persister.blockWrites(true);
+        setLedgerProblem(
+          `${ledgerLoad.message} Stamping is off so the saved copy is not overwritten.`,
+        );
+      } else {
+        persister.blockWrites(false);
+        setLedgerProblem(null);
+      }
+      ledgerRef.current = ledgerLoad.state;
+      setLedger(ledgerLoad.state);
+    },
+    [],
+  );
+
+  const loadSaved = useCallback(async () => {
+    const backend = await ensureBackend();
+    if (backend === null) {
+      setLoaded(true);
+      return;
     }
-    ledgerRef.current = ledgerLoad.state;
-    setLedger(ledgerLoad.state);
+    await Promise.all([loadProgramState(backend), loadLedgerState(backend)]);
     setLoaded(true);
     void handOff();
-  }, [handOff]);
+  }, [ensureBackend, loadProgramState, loadLedgerState, handOff]);
+
+  // Retry for a program problem reads only the program. It never touches
+  // stamp progress.
+  const retryProgramLoad = useCallback(async () => {
+    const backend = await ensureBackend();
+    if (backend !== null) {
+      await loadProgramState(backend);
+    }
+  }, [ensureBackend, loadProgramState]);
+
+  // Retry for a progress problem. The progress notice only shows while
+  // stamping is off (nothing unsaved in memory), so replacing memory with
+  // the saved copy cannot discard a visit. Guarded anyway.
+  const retryLedgerLoad = useCallback(async () => {
+    if (ledgerRef.current.outbox.length > 0 || ledgerRef.current.progress > 0) {
+      return;
+    }
+    const backend = await ensureBackend();
+    if (backend !== null) {
+      await loadLedgerState(backend);
+      void handOff();
+    }
+  }, [ensureBackend, loadLedgerState, handOff]);
 
   useEffect(() => {
     void loadSaved();
@@ -292,7 +367,7 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
     }
     persister.blockWrites(false);
     setLedgerProblem(null);
-    commitLedger(emptyLedger());
+    commitLedger(emptyLedger(newEpoch()));
   }
 
   const notices: DemoNotice[] = [];
@@ -302,7 +377,7 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
       tone: "error",
       text: programProblem,
       actionLabel: "Retry load",
-      onAction: () => void loadSaved(),
+      onAction: () => void retryProgramLoad(),
     });
   }
   if (ledgerProblem !== null) {
@@ -311,7 +386,7 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
       tone: "error",
       text: ledgerProblem,
       actionLabel: "Retry load",
-      onAction: () => void loadSaved(),
+      onAction: () => void retryLedgerLoad(),
     });
     notices.push({
       id: "ledger-reset",
@@ -348,6 +423,22 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
       id: "queue",
       tone: "info",
       text: "Sync queue is starting. New stamps are kept on this device.",
+    });
+  }
+  if (handoffProblem !== null) {
+    notices.push({
+      id: "handoff",
+      tone: "error",
+      text: handoffProblem,
+      actionLabel: "Retry handoff",
+      onAction: () => void handOff(),
+    });
+  }
+  if (queueConflicts > 0) {
+    notices.push({
+      id: "queue-conflict",
+      tone: "error",
+      text: `${queueConflicts} stamp(s) were not handed to the sync queue because the queue already holds a different stamp with the same id. They stay saved here and nothing was removed.`,
     });
   }
   if (ledger.outbox.length > 0 && queueState.phase === "durable") {

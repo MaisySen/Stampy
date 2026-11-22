@@ -10,6 +10,7 @@ import {
   emptyLedger,
   loadLedger,
   markHandedToQueue,
+  newEpoch,
   redeem,
 } from "../src/lib/ledger.js";
 import type { LedgerState } from "../src/lib/ledger.js";
@@ -60,7 +61,7 @@ test("redeem works only when eligible and records an id", () => {
   assert.equal(done.outcome, "redeemed");
   assert.equal(done.state.progress, 0);
   assert.equal(done.state.redemptions.length, 1);
-  assert.equal(done.state.redemptions[0].id, "redeem-1");
+  assert.equal(done.state.redemptions[0].id, "redeem-e0-1");
   assert.equal(redeem(done.state, five, 6000).outcome, "not-eligible");
 });
 
@@ -68,13 +69,13 @@ test("stamp ids come from a counter and a replayed id is refused", () => {
   const a = applyStamp(emptyLedger(), five, 1);
   assert.equal(a.outcome, "stamped");
   if (a.outcome !== "stamped") return;
-  assert.equal(a.stampId, "stamp-1");
-  const replay = applyStamp(a.state, five, 2, "stamp-1");
+  assert.equal(a.stampId, "stamp-e0-1");
+  const replay = applyStamp(a.state, five, 2, "stamp-e0-1");
   assert.equal(replay.outcome, "duplicate");
   assert.equal(replay.state.progress, 1);
   const b = applyStamp(a.state, five, 1);
   if (b.outcome !== "stamped") return;
-  assert.equal(b.stampId, "stamp-2");
+  assert.equal(b.stampId, "stamp-e0-2");
 });
 
 test("lowering the threshold keeps visits and carries extras over a redemption", () => {
@@ -116,7 +117,7 @@ test("stamps, eligibility and redemption survive a restart", async () => {
   assert.equal(restarted.state.nextSeq, 6);
   const next = applyStamp(restarted.state, five, 9000);
   if (next.outcome !== "stamped") throw new Error("expected stamp");
-  assert.equal(next.stampId, "stamp-6");
+  assert.equal(next.stampId, "stamp-e0-6");
   s = next.state;
 });
 
@@ -172,6 +173,49 @@ test("handed-to-queue stamps leave the outbox", () => {
   const a = applyStamp(emptyLedger(), five, 1);
   if (a.outcome !== "stamped") throw new Error("expected stamp");
   assert.equal(a.state.outbox.length, 1);
-  assert.equal(markHandedToQueue(a.state, ["stamp-1"]).outbox.length, 0);
+  assert.equal(markHandedToQueue(a.state, ["stamp-e0-1"]).outbox.length, 0);
   assert.equal(markHandedToQueue(a.state, ["other"]).outbox.length, 1);
+});
+
+test("a new card gets its own epoch, so ids never repeat after a reset", () => {
+  const a = emptyLedger(newEpoch());
+  const b = emptyLedger(newEpoch());
+  assert.notEqual(a.epoch, b.epoch);
+  const first = applyStamp(a, five, 1);
+  const second = applyStamp(b, five, 1);
+  if (first.outcome !== "stamped" || second.outcome !== "stamped") throw new Error("expected stamps");
+  assert.notEqual(first.stampId, second.stampId);
+});
+
+test("redemption ids stay unique and the full history is kept past 200", () => {
+  let s = emptyLedger();
+  const ids: string[] = [];
+  for (let i = 0; i < 205; i++) {
+    s = { ...s, progress: five.paidVisits };
+    const r = redeem(s, five, i);
+    if (r.outcome !== "redeemed") throw new Error("expected redeem");
+    ids.push(r.redemptionId);
+    s = r.state;
+  }
+  assert.equal(new Set(ids).size, 205);
+  assert.equal(s.redemptions.length, 205);
+  assert.equal(s.nextRedeemSeq, 206);
+});
+
+test("epoch and redemption sequence survive save and load, and an older save loads", async () => {
+  const backend = new MemoryBackend();
+  const persister = new LedgerPersister(backend);
+  let s = emptyLedger("ep1");
+  s = { ...s, progress: 5 };
+  const r = redeem(s, five, 1);
+  if (r.outcome !== "redeemed") throw new Error("expected redeem");
+  await persister.save(r.state);
+  const loaded = await loadLedger(backend);
+  assert.equal(loaded.state.epoch, "ep1");
+  assert.equal(loaded.state.nextRedeemSeq, 2);
+  const old = { v: 1, progress: 1, nextSeq: 2, outbox: [], lastStampAtMs: null, appliedIds: [], redemptions: [] };
+  backend.data.set(LEDGER_STORAGE_KEY, JSON.stringify(old));
+  const legacy = await loadLedger(backend);
+  assert.equal(legacy.status, "ok");
+  assert.equal(legacy.state.epoch, "legacy");
 });

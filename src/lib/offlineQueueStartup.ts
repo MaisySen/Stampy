@@ -66,6 +66,7 @@ export class StampQueueController {
   private current: QueueState = { phase: "starting" };
   private listeners = new Set<(state: QueueState) => void>();
   private starting: Promise<void> | null = null;
+  private retrying: Promise<void> | null = null;
   private store: PersistentOfflineQueueStore | null = null;
 
   constructor(private readonly createStore: OfflineQueueStoreFactory) {}
@@ -90,12 +91,20 @@ export class StampQueueController {
   }
 
   /** Try the store again after a memory-only start. Safe to call at any time. */
-  async retry(): Promise<void> {
-    await this.start();
-    if (this.current.phase !== "memory-only") {
-      return;
+  retry(): Promise<void> {
+    // Single flight: overlapping retries share one open, so a late result
+    // can never replace a queue that already took stamps.
+    if (this.retrying === null) {
+      this.retrying = (async () => {
+        await this.start();
+        if (this.current.phase === "memory-only") {
+          await this.open(this.current.queue);
+        }
+      })().finally(() => {
+        this.retrying = null;
+      });
     }
-    await this.open(this.current.queue);
+    return this.retrying;
   }
 
   /**
@@ -132,6 +141,10 @@ export class StampQueueController {
       this.fallback(previous, store.lastError.message);
       return;
     }
+    if (previous !== null && this.current.phase === "durable") {
+      // A queue is already durable. Never replace it with a late open.
+      return;
+    }
     const queue = new OfflineStampQueue(store);
     this.store = store;
     if (previous !== null) {
@@ -156,24 +169,42 @@ export class StampQueueController {
 /**
  * Hand ledger outbox stamps to the queue. enqueue is idempotent by id, so
  * calling this again after a restart or a retry never duplicates a stamp.
- * Returns the ids the queue now holds, so the ledger can drop them from
- * its outbox.
+ * An id the queue already holds counts as handed over only when the queued
+ * stamp is the same stamp (same pass, business and time). A different stamp
+ * under the same id is a conflict: it stays in the outbox and nothing is
+ * removed or replaced. Returns the ids the queue holds for these stamps and
+ * the conflicting ids.
  */
 export function handOutboxToQueue(
   queue: OfflineStampQueue,
   outbox: ReadonlyArray<{ id: string; createdAtMs: number }>,
   passId: string,
   businessId: string,
-): string[] {
+): { handed: string[]; conflicts: string[] } {
   const handed: string[] = [];
+  const conflicts: string[] = [];
   for (const stamp of outbox) {
-    queue.enqueue({
+    const added = queue.enqueue({
       id: stamp.id,
       passId,
       businessId,
       createdAtMs: stamp.createdAtMs,
     });
-    handed.push(stamp.id);
+    if (added) {
+      handed.push(stamp.id);
+      continue;
+    }
+    const held = queue.pending().find((item) => item.id === stamp.id);
+    if (
+      held !== undefined &&
+      held.passId === passId &&
+      held.businessId === businessId &&
+      held.createdAtMs === stamp.createdAtMs
+    ) {
+      handed.push(stamp.id);
+    } else {
+      conflicts.push(stamp.id);
+    }
   }
-  return handed;
+  return { handed, conflicts };
 }

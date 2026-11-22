@@ -19,7 +19,6 @@ import type { ProgramSettings } from "./program";
 
 export const LEDGER_STORAGE_KEY = "stampies:demo-ledger:v1";
 const MAX_APPLIED_IDS = 500;
-const MAX_REDEMPTIONS = 200;
 
 export interface OutboxStamp {
   id: string;
@@ -34,6 +33,13 @@ export interface Redemption {
 
 export interface LedgerState {
   v: 1;
+  /**
+   * Unique per card history. Stamp and redemption ids include it, so a new
+   * card after a reset never reuses an id that an older queue still holds.
+   */
+  epoch: string;
+  /** Next redemption number, saved so redemption ids never repeat. */
+  nextRedeemSeq: number;
   /** Paid visits counted on the current card. */
   progress: number;
   /** Next stamp number, saved so ids survive a restart. */
@@ -47,8 +53,24 @@ export interface LedgerState {
   redemptions: Redemption[];
 }
 
-export function emptyLedger(): LedgerState {
-  return { v: 1, progress: 0, nextSeq: 1, outbox: [], lastStampAtMs: null, appliedIds: [], redemptions: [] };
+/** A fresh epoch. Unique enough across resets on one device: time plus random. */
+export function newEpoch(): string {
+  return `${Date.now().toString(36)}${Math.floor(Math.random() * 36 ** 4).toString(36).padStart(4, "0")}`;
+}
+
+/** An empty ledger. Pass newEpoch() for a real new card; the default is for tests. */
+export function emptyLedger(epoch: string = "e0"): LedgerState {
+  return {
+    v: 1,
+    epoch,
+    nextRedeemSeq: 1,
+    progress: 0,
+    nextSeq: 1,
+    outbox: [],
+    lastStampAtMs: null,
+    appliedIds: [],
+    redemptions: [],
+  };
 }
 
 export interface CardStatus {
@@ -83,7 +105,7 @@ export function applyStamp(
   nowMs: number,
   stampId?: string,
 ): StampOutcome {
-  const id = stampId ?? `stamp-${state.nextSeq}`;
+  const id = stampId ?? `stamp-${state.epoch}-${state.nextSeq}`;
   if (state.appliedIds.includes(id)) {
     return { outcome: "duplicate", state };
   }
@@ -114,14 +136,17 @@ export function redeem(
   if (!cardStatus(state, program).eligible) {
     return { outcome: "not-eligible", state };
   }
-  const id = `redeem-${state.redemptions.length + 1}`;
+  const id = `redeem-${state.epoch}-${state.nextRedeemSeq}`;
   const next: LedgerState = {
     ...state,
     progress: state.progress - program.paidVisits,
+    nextRedeemSeq: state.nextRedeemSeq + 1,
+    // Redemption history is kept in full. Records are small, and dropping
+    // them would hide that a reward was already given.
     redemptions: [
       ...state.redemptions,
       { id, atMs: nowMs, paidVisits: program.paidVisits },
-    ].slice(-MAX_REDEMPTIONS),
+    ],
   };
   return { outcome: "redeemed", state: next, redemptionId: id };
 }
@@ -183,8 +208,16 @@ function parseLedger(value: unknown): LedgerState | null {
     }
     redemptions.push({ id: r.id, atMs: r.atMs, paidVisits: r.paidVisits });
   }
+  const epoch =
+    typeof raw.epoch === "string" && raw.epoch.length > 0 ? raw.epoch : "legacy";
+  const nextRedeemSeq =
+    isCount(raw.nextRedeemSeq) && raw.nextRedeemSeq >= 1
+      ? raw.nextRedeemSeq
+      : redemptions.length + 1;
   return {
     v: 1,
+    epoch,
+    nextRedeemSeq,
     progress: raw.progress,
     nextSeq: raw.nextSeq,
     outbox,
@@ -211,19 +244,19 @@ export type LedgerLoad =
 export async function loadLedger(backend: KeyValueBackend): Promise<LedgerLoad> {
   const read = await readJson(backend, LEDGER_STORAGE_KEY);
   if (read.status === "missing") {
-    return { status: "missing", state: emptyLedger() };
+    return { status: "missing", state: emptyLedger(newEpoch()) };
   }
   if (read.status === "error") {
-    return { status: "error", state: emptyLedger(), message: read.message };
+    return { status: "error", state: emptyLedger(newEpoch()), message: read.message };
   }
   if (read.status === "corrupt") {
-    return { status: "invalid", state: emptyLedger(), message: read.message };
+    return { status: "invalid", state: emptyLedger(newEpoch()), message: read.message };
   }
   const parsed = parseLedger(read.value);
   if (parsed === null) {
     return {
       status: "invalid",
-      state: emptyLedger(),
+      state: emptyLedger(newEpoch()),
       message: "Saved stamp progress has an unknown format.",
     };
   }

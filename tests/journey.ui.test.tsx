@@ -154,6 +154,10 @@ function savedLedger(backend: InstanceType<typeof MemoryBackend>) {
   return JSON.parse(backend.data.get(LEDGER_STORAGE_KEY) ?? "null");
 }
 
+function firstStampId(h: { backend: InstanceType<typeof MemoryBackend> }): string {
+  return `stamp-${savedLedger(h.backend).epoch}-1`;
+}
+
 function queuedIds(queueBackend: InstanceType<typeof MemoryBackend>): string[] {
   const raw = queueBackend.data.get(OFFLINE_QUEUE_STORAGE_KEY);
   return raw === undefined ? [] : (JSON.parse(raw) as Array<{ id: string }>).map((s) => s.id);
@@ -361,7 +365,7 @@ test("a stamp taken before the queue is ready reaches the queue once", async () 
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
     await settle();
-    assert.deepEqual(queuedIds(h.queueBackend), ["stamp-1"]);
+    assert.deepEqual(queuedIds(h.queueBackend), [firstStampId(h)]);
     assert.equal(savedLedger(h.backend).outbox.length, 0);
     assert.equal(savedLedger(h.backend).progress, 1);
   } finally {
@@ -386,7 +390,7 @@ test("queue start failure falls back, retry hands stamps over once, restart does
     fail = false;
     await press(r, "Retry queue");
     await settle();
-    assert.deepEqual(queuedIds(h.queueBackend), ["stamp-1"]);
+    assert.deepEqual(queuedIds(h.queueBackend), [firstStampId(h)]);
     assert.doesNotMatch(screenText(r), /memory-only/);
     assert.equal(savedLedger(h.backend).outbox.length, 0);
   } finally {
@@ -395,7 +399,7 @@ test("queue start failure falls back, retry hands stamps over once, restart does
   r = await h.mount({ queueStore: factory });
   try {
     await settle();
-    assert.deepEqual(queuedIds(h.queueBackend), ["stamp-1"]);
+    assert.deepEqual(queuedIds(h.queueBackend), [firstStampId(h)]);
     assert.equal(savedLedger(h.backend).progress, 1);
   } finally {
     r.unmount();
@@ -460,6 +464,74 @@ test("unsupported claims are qualified: no location use, demo-only checks", asyn
     assert.doesNotMatch(wallet, /does not track you live/);
     await press(r, "Stamp");
     assert.match(screenText(r), /Demo checks run on this device only/);
+  } finally {
+    r.unmount();
+  }
+});
+
+async function stampOnce(r: Renderer) {
+  await press(r, "Stamp");
+  await press(r, "Scan");
+  await press(r, "Demo only: add a stamp without scanning");
+}
+
+test("a failed queue write keeps the outbox, shows a retry, and recovers with no new stamp", async () => {
+  const h = harness();
+  const r = await h.mount();
+  try {
+    h.queueBackend.failWrites = true;
+    await stampOnce(r);
+    assert.match(screenText(r), /Could not write to the sync queue/);
+    assert.equal(savedLedger(h.backend).outbox.length, 1);
+    h.queueBackend.failWrites = false;
+    await press(r, "Retry handoff");
+    await settle();
+    assert.deepEqual(queuedIds(h.queueBackend), [firstStampId(h)]);
+    assert.equal(savedLedger(h.backend).outbox.length, 0);
+    assert.doesNotMatch(screenText(r), /Could not write to the sync queue/);
+  } finally {
+    r.unmount();
+  }
+});
+
+test("retrying a program load never discards an unsaved visit", async () => {
+  const h = harness();
+  h.backend.data.set(
+    PROGRAM_STORAGE_KEY,
+    JSON.stringify({ v: 1, settings: { name: "X", reward: "Y", paidVisits: 40 } }),
+  );
+  const r = await h.mount();
+  try {
+    h.backend.failWrites = true;
+    await stampOnce(r);
+    assert.match(screenText(r), /Progress is not saved/);
+    await press(r, "Retry load");
+    assert.match(screenText(r), /Progress is not saved/);
+    assert.match(screenText(r), /1 of 8 paid visits/);
+    h.backend.failWrites = false;
+    await press(r, "Retry save");
+    assert.equal(savedLedger(h.backend).progress, 1);
+  } finally {
+    r.unmount();
+  }
+});
+
+test("starting a new card after unreadable progress cannot collide with a queued older stamp", async () => {
+  const h = harness();
+  h.backend.data.set(LEDGER_STORAGE_KEY, "{not json");
+  h.queueBackend.data.set(
+    OFFLINE_QUEUE_STORAGE_KEY,
+    JSON.stringify([{ id: "stamp-e0-1", passId: "old", businessId: "old", createdAtMs: 1, attempts: 0 }]),
+  );
+  const r = await h.mount();
+  try {
+    await press(r, "Start new card");
+    await stampOnce(r);
+    const epoch = savedLedger(h.backend).epoch as string;
+    assert.notEqual(epoch, "e0");
+    await settle();
+    assert.deepEqual(queuedIds(h.queueBackend), ["stamp-e0-1", `stamp-${epoch}-1`]);
+    assert.equal(savedLedger(h.backend).outbox.length, 0);
   } finally {
     r.unmount();
   }
