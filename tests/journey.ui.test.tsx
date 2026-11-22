@@ -679,7 +679,7 @@ test("when the ledger write and the queue write both fail, no notice promises th
     assert.match(text, /Progress is not saved/);
     assert.match(text, /this session only/);
     assert.doesNotMatch(text, /nothing is lost/i);
-    assert.doesNotMatch(text, /Stamps stay saved in the progress record/);
+    assert.doesNotMatch(text, /does not confirm/);
     assert.ok(hasButton(r, "Retry handoff"));
     assert.ok(hasButton(r, "Retry save"));
     h.backend.failWrites = false;
@@ -687,12 +687,35 @@ test("when the ledger write and the queue write both fail, no notice promises th
     await settle();
     assert.equal(savedLedger(h.backend).progress, 1);
     assert.equal(savedLedger(h.backend).outbox.length, 1);
-    assert.match(screenText(r), /Stamps stay saved in the progress record/);
+    assert.doesNotMatch(screenText(r), /this session only/);
+    assert.doesNotMatch(screenText(r), /Progress is not saved/);
     h.queueBackend.failWrites = false;
     await press(r, "Retry handoff");
     await settle();
     assert.deepEqual(queuedIds(h.queueBackend), [firstStampId(h)]);
     assert.equal(savedLedger(h.backend).outbox.length, 0);
+  } finally {
+    r.unmount();
+  }
+});
+
+test("while the progress write is still pending, no notice claims the stamp is saved", async () => {
+  const h = harness();
+  const r = await h.mount();
+  try {
+    const original = h.backend.setItem.bind(h.backend);
+    h.backend.setItem = (key: string, value: string) =>
+      key === LEDGER_STORAGE_KEY ? new Promise<void>(() => {}) : original(key, value);
+    h.queueBackend.failWrites = true;
+    await stampOnce(r);
+    await settle();
+    const text = screenText(r);
+    assert.match(text, /Could not write to the sync queue/);
+    assert.match(text, /does not confirm/);
+    assert.doesNotMatch(text, /nothing is lost/i);
+    assert.doesNotMatch(text, /stay saved/i);
+    assert.doesNotMatch(text, /survive/i);
+    assert.equal(savedLedger(h.backend), null);
   } finally {
     r.unmount();
   }

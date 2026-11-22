@@ -394,7 +394,7 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
   }
   const keptHere =
     saveProblem === null
-      ? "Stamps stay saved in the progress record on this device."
+      ? "Stamps stay in the outbox. This screen does not confirm they are written to the progress record on this device."
       : "Progress is also not saved, so stamps are kept in this session only and would be lost on restart until Retry save works.";
   if (saveProblem !== null) {
     notices.push({
