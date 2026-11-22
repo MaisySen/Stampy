@@ -46,9 +46,9 @@ function validationError(body, nowMs) {
   return null;
 }
 
-export function createStampIntakeHandler({stampStore, loadCommittedPass, now = Date.now, onRecorded}) {
+export function createStampIntakeHandler({stampStore, loadCommittedPass, authorizeStamp, now = Date.now, onRecorded}) {
   if (!stampStore || typeof stampStore.record !== 'function' || typeof stampStore.count !== 'function' ||
-      typeof loadCommittedPass !== 'function' || typeof now !== 'function') {
+      typeof loadCommittedPass !== 'function' || typeof authorizeStamp !== 'function' || typeof now !== 'function') {
     throw new Error('Invalid stamp intake configuration.');
   }
   return async function handleStampIntake(request) {
@@ -61,6 +61,16 @@ export function createStampIntakeHandler({stampStore, loadCommittedPass, now = D
       return jsonResponse(400);
     }
     if (validationError(body, now())) return jsonResponse(400);
+    // A pass ID is not proof of permission to award stamps. The host
+    // must authenticate the staff/merchant and authorise this business.
+    // Reject failures before looking up the pass or touching the ledger.
+    let authorised = false;
+    try {
+      authorised = await authorizeStamp({request, stamp: body});
+    } catch {
+      return jsonResponse(403);
+    }
+    if (authorised !== true) return jsonResponse(403);
     const row = await loadCommittedPass(body.passId);
     if (!row || row.record?.passId !== body.passId) return jsonResponse(404);
     if (row.record?.businessId !== body.businessId) return jsonResponse(404);
