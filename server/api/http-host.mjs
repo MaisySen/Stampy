@@ -4,7 +4,7 @@ import {readBoundedStream} from './bounded-stream.mjs';
 
 const quiet={'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Connection':'close'};
 const forwarded=['authorization','content-type','content-length','content-encoding','idempotency-key','origin'];
-const allowedResponse=new Set(['content-type','allow','cache-control','referrer-policy','x-content-type-options']);
+const allowedResponse=new Set(['content-type','allow','www-authenticate','cache-control','referrer-policy','x-content-type-options']);
 const apiPath=/^\/api\/v1\/loyalty\/(?:stamps|redemptions|passes\/[0-9a-fA-F-]{36})$/;
 const integer=(x,min,max)=>Number.isInteger(x)&&x>=min&&x<=max;
 class HostError extends Error {constructor(status){super('Request rejected');this.status=status;}}

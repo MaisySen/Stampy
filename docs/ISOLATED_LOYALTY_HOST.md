@@ -54,7 +54,10 @@ admission at capacity returns503. maxInFlight equals the owned pool maximum.
 Timed-out/disconnected operations KEEP their capacity slot until the actual
 handler settles, so response timeouts cannot create unbounded background work.
 Responses have bounded streamed byte/read/deadline work and a small header
-allowlist. Security/cache/connection headers cannot be overridden by a handler.
+allowlist, including the canonical WWW-Authenticate Bearer challenge on401.
+The challenge remains subject to the total response-header budget, with an
+oversized challenge rejected before writing headers. Security/cache/connection
+headers cannot be overridden by a handler.
 Errors do not echo request bodies, tokens, DB or provider details.
 
 ## Actual server composition and startup

@@ -106,3 +106,13 @@ test('pipelining while a write is in flight destroys connection, not an unbounde
   try{await once(socket,'connect');socket.write(raw());await inside;const closed=new Promise(resolve=>socket.once('close',resolve));socket.write(next.repeat(200));await closed;assert.equal(calls,1);assert.equal(f.host.inspect().active,1);release();await idle(f.host);}finally{release?.();socket.destroy();await f.host.close();}
  }
 });
+
+test('actual socket401 preserves bounded Bearer challenge for transport and ledger denial',async()=>{
+ const transport=await start();
+ try{const reply=await exchange(transport.port,raw().replace('Authorization: Bearer a.b.c\r\n',''));assert.equal(code(reply),401);assert.match(reply,/\r\nwww-authenticate: Bearer realm="Stampy"\r\n/i);assert.equal(transport.calls.length,0);}finally{await transport.host.close();}
+ const ledger={issueStamp:async()=>{const e=new Error('private denial');e.name='LoyaltyError';e.code='UNAUTHORIZED';throw e;},redeemReward:async()=>null,getMerchantPass:async()=>null};
+ const denied=await start({handler:createLoyaltyHttpHandler({origin,ledger})});
+ try{const reply=await exchange(denied.port,raw());assert.equal(code(reply),401);assert.match(reply,/\r\nwww-authenticate: Bearer realm="Stampy"\r\n/i);assert.equal(reply.includes('private denial'),false);}finally{await denied.host.close();}
+ const oversized=await start({handler:async()=>new Response(null,{status:401,headers:{'WWW-Authenticate':'Bearer realm="'+'x'.repeat(8192)+'"'}})});
+ try{const reply=await exchange(oversized.port,raw());assert.equal(code(reply),503);assert.doesNotMatch(reply,/www-authenticate:/i);}finally{await oversized.host.close();}
+});

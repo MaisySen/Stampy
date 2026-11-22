@@ -57,7 +57,7 @@ test('owned raw host / verifier / restricted-pool actual PostgreSQL composition'
   function command(path='stamps',key=1,token=access(),more={}) {
    const payload=JSON.stringify({...body,...more});let req;
    const promise=new Promise((resolve,reject)=>{
-    req=request({hostname:'127.0.0.1',port,path:'/api/v1/loyalty/'+path,method:'POST',headers:{Host:'api.example',Authorization:'Bearer '+token,'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload),'Idempotency-Key':'host-command-'+String(key).padStart(16,'0')}},res=>{let text='';res.on('data',c=>text+=c);res.on('end',()=>{try{resolve({status:res.statusCode,body:text?JSON.parse(text):null});}catch(e){reject(e);}});});
+    req=request({hostname:'127.0.0.1',port,path:'/api/v1/loyalty/'+path,method:'POST',headers:{Host:'api.example',Authorization:'Bearer '+token,'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload),'Idempotency-Key':'host-command-'+String(key).padStart(16,'0')}},res=>{let text='';res.on('data',c=>text+=c);res.on('end',()=>{try{resolve({status:res.statusCode,headers:res.headers,body:text?JSON.parse(text):null});}catch(e){reject(e);}});});
     req.setTimeout(12000,()=>req.destroy(new Error('Client deadline')));req.on('error',reject);req.end(payload);
    });return {promise,req};
   }
@@ -76,7 +76,7 @@ test('owned raw host / verifier / restricted-pool actual PostgreSQL composition'
    assert.equal((await command('stamps',2).promise).status,200);assert.equal((await command('redemptions',3).promise).body.transaction.balance,0);assert.equal((await command('redemptions',3).promise).body.transaction.duplicate,true);assert.equal(await events(),3);assert.equal(jwksCalls,1);
   });
   await t.test('signed wrong audience, role revocation, cross-tenant and body authority remain denied',async()=>{
-   await seed();assert.equal((await command('stamps',1,access({aud:'host-browser-client'})).promise).status,401);
+   await seed();const unauthorized=await command('stamps',1,access({aud:'host-browser-client'})).promise;assert.equal(unauthorized.status,401);assert.equal(unauthorized.headers['www-authenticate'],'Bearer realm="Stampy"');
    assert.equal((await command('stamps',1,access(),{businessId:'other-merchant'}).promise).status,403);
    assert.equal((await command('stamps',1,access(),{balance:100}).promise).status,400);
    await admin.query("UPDATE stampies_identity.merchant_memberships SET status='revoked' WHERE merchant_id=$1",[M]);assert.equal((await command().promise).status,403);assert.equal(await events(),0);
