@@ -83,14 +83,16 @@ export function createOidcAccessTokenVerifier({
             jwk.kid.length < 1 || jwk.kid.length > 200 ||
             (jwk.use !== undefined && jwk.use !== 'sig') ||
             (jwk.alg !== undefined && jwk.alg !== 'RS256')) continue;
+        // Ambiguous key IDs invalidate the entire key set. Taking whichever
+        // matching key appears first would make issuer key rotation unsafe.
+        if (refreshed.has(jwk.kid)) throw new Error('Duplicate JWKS key id.');
         try {
           const key = createPublicKey({key: jwk, format: 'jwk'});
           if (key.asymmetricKeyType !== 'rsa' ||
               (key.asymmetricKeyDetails?.modulusLength ?? 0) < 2048) continue;
-          if (refreshed.has(jwk.kid)) throw new Error('Duplicate JWKS key id.');
           refreshed.set(jwk.kid, key);
         } catch {
-          // Invalid or duplicate keys never become trusted.
+          // Invalid keys never become trusted.
         }
       }
       if (refreshed.size === 0) throw new Error('No valid JWKS signing keys.');
