@@ -112,3 +112,24 @@ export function installStateLabel(state: PassInstallState): string {
   }
   return "Add to Wallet";
 }
+
+/**
+ * This build has no real Wallet call. The install screen is a local preview,
+ * so these labels and the notice say that plainly instead of claiming the
+ * pass was added. installStateLabel above is kept for the state machine.
+ */
+export const LOCAL_PREVIEW_NOTICE =
+  "Local preview only. No pass was issued and nothing was sent to Apple or Google. Adding a real pass needs the Wallet server and a device test.";
+
+export function previewStateLabel(state: PassInstallState): string {
+  if (state === "installing") {
+    return "Preparing preview";
+  }
+  if (state === "installed") {
+    return "Preview ready, not in Wallet";
+  }
+  if (state === "failed") {
+    return "Preview not shown";
+  }
+  return "Preview Wallet pass";
+}

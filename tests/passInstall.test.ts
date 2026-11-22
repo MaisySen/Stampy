@@ -10,6 +10,8 @@ import {
   installFailed,
   installStateLabel,
   installSucceeded,
+  LOCAL_PREVIEW_NOTICE,
+  previewStateLabel,
   resetInstall,
   retryInstall,
   startInstall,
@@ -106,4 +108,13 @@ test("a second failure counts a second attempt", () => {
   status = installFailed(retryInstall(status), installErrorMessage("network"));
   assert.equal(status.attempts, 2);
   assert.equal(status.state, "failed");
+});
+
+test("preview labels never claim the pass was added to Wallet", () => {
+  assert.equal(previewStateLabel("notInstalled"), "Preview Wallet pass");
+  assert.equal(previewStateLabel("installing"), "Preparing preview");
+  assert.equal(previewStateLabel("installed"), "Preview ready, not in Wallet");
+  assert.equal(previewStateLabel("failed"), "Preview not shown");
+  assert.match(LOCAL_PREVIEW_NOTICE, /No pass was issued/);
+  assert.match(LOCAL_PREVIEW_NOTICE, /Apple or Google/);
 });

@@ -8,7 +8,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, shared, spacing, type } from "../theme";
-import { STAMPS_TO_REWARD } from "../data";
 import type { StampMethod } from "../data";
 import { blockMessage, canStamp, checkStaffPin, dayString } from "../lib/fraud";
 import type { StampCheck } from "../lib/fraud";
@@ -20,6 +19,9 @@ type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
 interface StampScreenProps {
   stamps: number;
+  paidVisits: number;
+  /** When set, stamping is off and this says why (for example saved progress unreadable). */
+  unavailableReason?: string | null;
   staffCode: string;
   lastStampAtMs: number | null;
   lastStampDay: string | null;
@@ -34,6 +36,8 @@ const METHODS: Array<{ key: Method; label: string; hint: string; icon: IconName 
 
 export function StampScreen({
   stamps,
+  paidVisits,
+  unavailableReason = null,
   staffCode,
   lastStampAtMs,
   lastStampDay,
@@ -44,8 +48,9 @@ export function StampScreen({
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
   const [blocked, setBlocked] = useState<StampCheck | null>(null);
-  const rewardReady = stamps >= STAMPS_TO_REWARD;
-  const cardFull = rewardReady;
+  const rewardReady = stamps >= paidVisits;
+  const unavailable = unavailableReason !== null;
+  const cardFull = rewardReady || unavailable;
 
   function checkFraud(): StampCheck | null {
     const check = canStamp(lastStampAtMs, lastStampDay, Date.now(), dayString(new Date()));
@@ -58,7 +63,7 @@ export function StampScreen({
   }
 
   function handleStamp() {
-    if (cardFull) {
+    if (cardFull || unavailable) {
       return;
     }
     if (checkFraud() !== null) {
@@ -98,9 +103,16 @@ export function StampScreen({
     <View>
       <Text style={styles.title}>Get a stamp</Text>
       <Text style={styles.sub}>
-        {stamps} of {STAMPS_TO_REWARD} stamps. One stamp per visit, one visit
-        per day.
+        {Math.min(stamps, paidVisits)} of {paidVisits} paid visits. After the
+        last paid visit, the next visit is the free reward visit. One stamp per
+        visit, one visit per day.
       </Text>
+      {unavailable && (
+        <View style={[shared.card, styles.blockedCard]}>
+          <Text style={shared.cardTitle}>Stamping is off</Text>
+          <Text style={shared.cardMuted}>{unavailableReason}</Text>
+        </View>
+      )}
 
       <View style={styles.methods}>
         {METHODS.map((m) => {
@@ -147,7 +159,7 @@ export function StampScreen({
             style={[styles.primaryButton, cardFull && styles.buttonDisabled]}
           >
             <Text style={styles.primaryButtonText}>
-              {cardFull ? "Card is full" : "Simulate tap"}
+              {rewardReady ? "Reward visit ready" : "Simulate tap"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -158,7 +170,7 @@ export function StampScreen({
           <QrCode size={126} />
           <Text style={shared.cardTitle}>Scan at the counter</Text>
           <Text style={[shared.cardMuted, styles.flowSub]}>
-            Code STAMPY-{staffCode}. The code changes each day at the counter.
+            This is a placeholder code, not a real QR scan. This demo has no camera scan.
           </Text>
           <TouchableOpacity
             accessibilityRole="button"
@@ -168,7 +180,7 @@ export function StampScreen({
             style={[styles.primaryButton, cardFull && styles.buttonDisabled]}
           >
             <Text style={styles.primaryButtonText}>
-              {cardFull ? "Card is full" : "I scanned the code"}
+              {rewardReady ? "Reward visit ready" : "Demo only: add a stamp without scanning"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -209,7 +221,7 @@ export function StampScreen({
             ]}
           >
             <Text style={styles.primaryButtonText}>
-              {cardFull ? "Card is full" : "Add the stamp"}
+              {rewardReady ? "Reward visit ready" : "Add the stamp"}
             </Text>
           </TouchableOpacity>
           <Text style={styles.pinHint}>
@@ -223,12 +235,12 @@ export function StampScreen({
           <Ionicons name="checkmark-circle" size={28} color={colors.green} />
           <View style={styles.doneText}>
             <Text style={shared.cardTitle}>
-              {rewardReady ? "Reward ready" : "Stamp added"}
+              {rewardReady ? "Reward visit ready" : "Paid visit added"}
             </Text>
             <Text style={shared.cardMuted}>
               {rewardReady
-                ? "Your card is full. Claim the free coffee on the Wallet tab."
-                : `You now have ${stamps} of ${STAMPS_TO_REWARD} stamps.`}
+                ? "All paid visits are done. The next visit is the free reward visit. Redeem it on the Wallet tab (recorded on this device only)."
+                : `You now have ${stamps} of ${paidVisits} paid visits.`}
             </Text>
           </View>
         </View>
@@ -255,11 +267,11 @@ export function StampScreen({
         </View>
       )}
 
-      {cardFull && (
+      {rewardReady && (
         <View style={[shared.card, styles.fullCard]}>
-          <Text style={shared.cardTitle}>Your card is full</Text>
+          <Text style={shared.cardTitle}>All paid visits are done</Text>
           <Text style={[shared.cardMuted, styles.flowSub]}>
-            Redeem the reward on the Wallet tab, then start a new card.
+            The next visit is the free reward visit. Redeem it on the Wallet tab, then start a new card.
           </Text>
         </View>
       )}

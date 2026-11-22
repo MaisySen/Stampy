@@ -34,6 +34,12 @@ const files = [
   "tests/device.test.ts",
   "tests/pass.test.ts",
   "tests/passInstall.test.ts",
+  "src/lib/storage.ts",
+  "src/lib/program.ts",
+  "src/lib/ledger.ts",
+  "tests/program.test.ts",
+  "tests/ledger.test.ts",
+  "tests/queueReadiness.test.ts",
   "tests/node.d.ts",
 ];
 
@@ -63,3 +69,26 @@ run(
 );
 
 run(`node --test ${outDir}/tests/*.test.js`);
+
+// UI journey: renders the real App with synthetic storage and stubbed
+// react-native. Compiled apart because it needs JSX and CommonJS.
+const uiOutDir = ".test-out/ui";
+if (existsSync(uiOutDir)) {
+  rmSync(uiOutDir, { recursive: true, force: true });
+}
+run(
+  [
+    "npx tsc App.tsx tests/journey.ui.test.tsx tests/node.d.ts",
+    "--outDir",
+    uiOutDir,
+    "--noCheck",
+    "--jsx react-jsx",
+    "--module commonjs",
+    "--moduleResolution node10",
+    "--target es2020",
+    "--esModuleInterop",
+    "--resolveJsonModule",
+    "--skipLibCheck",
+  ].join(" "),
+);
+run(`node --test ${uiOutDir}/tests/journey.ui.test.js`);

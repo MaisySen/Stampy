@@ -36,12 +36,30 @@ Readable analytics: stamps given, customers who visited, stamps over time, split
 
 A business builds its own pass in the app, in four steps.
 
-1. Details: business name, reward text, stamp target with 9 as the default.
+1. Details: business name, reward text, paid visits with 8 as the default (3 to 11 allowed), then the next visit is free.
 2. Design: brand colour, cover style, optional business photo URL.
 3. Links: menu link, Wi-Fi name and password, feedback link, one external link with a label. All optional, all clearable.
-4. Preview and publish: a live phone preview titled Building your pass. The photo is front and centre. The stamp count shows big as 0/9. A QR code adds the pass to Wallet. The pass is marked Powered by Stampies.
+4. Preview and publish: a live phone preview titled Building your pass. The photo is front and centre. The paid visit count shows big as 0/8 by default. A placeholder QR code stands in until Wallet passes are live. The pass is marked Powered by Stampies.
 
-Publish shows the share link and QR code. The customer needs no app download. Every pass keeps the Stampies differentiators: Wallet pass, NFC tap, QR code and staff stamp, nearby nudge, birthday reward, and business analytics.
+In the local demo, Create local preview link shows a link that is not published. The customer needs no app download. Every pass keeps the Stampies differentiators: Wallet pass, NFC tap, QR code and staff stamp, nearby nudge, birthday reward, and business analytics.
+
+## Local demo status
+
+Verified on branch feat/stampies-local-demo-journey-20261122 (local, synthetic data):
+
+- Program settings (name, reward, paid visits, default 8, range 3 to 11) save, reopen and drive the Wallet, Stamp, Program and preview screens.
+- Stamp progress, eligibility and local redemption persist across restarts. Redeem works only when eligible.
+- Invalid settings and storage failures show on screen. Unreadable saved progress is never overwritten.
+- Stamps taken before the offline queue is ready are held in a saved outbox and handed to the queue by id. Retry and restart do not lose or duplicate stamps.
+
+Unfinished live functionality:
+
+- Real publish of a program and a real pass link.
+- Issuing Apple Wallet and Google Wallet passes, and pass updates on each stamp.
+- Real QR scan and NFC tap stamping against a server.
+- Server confirmed stamps and redemptions through the Wallet server.
+- Postgres Wallet server tests, which need the `pg` package and a Postgres fixture.
+- Device testing, EAS builds and store release.
 
 ## Screens
 
@@ -55,9 +73,9 @@ Publish shows the share link and QR code. The customer needs no app download. Ev
 8. Business Campaigns. Nearby nudge, birthday treat, win-back message.
 9. Business Program setup. Reward rule, card design, stamp methods, toggles.
 10. Business Settings. Business details, legal line, data clear, version.
-11. Pass builder, Details and Design. Business name, reward text, stamp target, brand colour, cover style, photo URL.
+11. Pass builder, Details and Design. Business name, reward text, paid visits, brand colour, cover style, photo URL.
 12. Pass builder, Links. Menu, Wi-Fi, feedback, and one external link.
-13. Pass builder, Preview and publish. Live phone preview, big 0/9 stamp count, QR code, Powered by Stampies, publish and share.
+13. Pass builder, Preview and publish. Live phone preview, big 0/8 paid visit count by default, placeholder QR code, Powered by Stampies, local preview link (not published).
 
 ## Roadmap
 

@@ -2,28 +2,37 @@ import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, shared, spacing, type } from "../theme";
-import { DEMO_BIRTHDAY, STAMPS_TO_REWARD } from "../data";
+import { DEMO_BIRTHDAY } from "../data";
 import { daysUntilBirthday, isBirthdayMonth, isBirthdayToday } from "../lib/loyalty";
-import { StampCard } from "../components/StampCard";
+import { ProgramStampCard } from "../components/ProgramStampCard";
 
 interface WalletScreenProps {
   businessName: string;
   reward: string;
+  /** Paid visits counted on the card. */
   stamps: number;
+  paidVisits: number;
+  /** Set when saved progress could not be read, so redeeming is off. */
+  unavailableReason?: string | null;
   onRedeem: () => void;
   onGoToStamp: () => void;
+  /** Opens the local Wallet preview. It does not issue a pass. */
+  onAddToWallet?: () => void;
 }
 
 export function WalletScreen({
   businessName,
   reward,
   stamps,
+  paidVisits,
+  unavailableReason = null,
   onRedeem,
   onGoToStamp,
+  onAddToWallet,
 }: WalletScreenProps) {
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const rewardReady = stamps >= STAMPS_TO_REWARD;
-  const stampsLeft = Math.max(0, STAMPS_TO_REWARD - stamps);
+  const rewardReady = stamps >= paidVisits && unavailableReason === null;
+  const stampsLeft = Math.max(0, paidVisits - stamps);
   const today = new Date();
   const birthdayToday = isBirthdayToday(DEMO_BIRTHDAY.month, DEMO_BIRTHDAY.day, today);
   const birthdayThisMonth = isBirthdayMonth(DEMO_BIRTHDAY.month, today);
@@ -31,14 +40,14 @@ export function WalletScreen({
   const nudgeText = rewardReady
     ? "Your reward is ready. Show this card at the counter."
     : stampsLeft === 1
-      ? "Come in for a treat. Your card is one stamp from a free coffee."
-      : `Come in for a treat. Your card is ${stampsLeft} stamps from a free coffee.`;
+      ? "Come in for a treat. Your card is one paid visit from the free reward visit."
+      : `Come in for a treat. Your card is ${stampsLeft} paid visits from the free reward visit.`;
   return (
     <View>
       <View style={styles.greeting}>
         <View>
           <Text style={styles.hello}>Good morning</Text>
-          <Text style={styles.name}>Corner Cafe regular</Text>
+          <Text style={styles.name}>{businessName} regular</Text>
         </View>
         <TouchableOpacity
           accessibilityLabel="Alerts"
@@ -61,17 +70,24 @@ export function WalletScreen({
         </View>
       )}
 
-      <StampCard businessName={businessName} stamps={stamps} reward={reward} />
+      <ProgramStampCard
+        businessName={businessName}
+        paidVisitsDone={stamps}
+        paidVisits={paidVisits}
+        reward={reward}
+      />
 
       <View style={[shared.card, styles.actionCard]}>
         <View>
           <Text style={shared.cardTitle}>
-            {rewardReady ? "Your reward is ready" : `${stampsLeft} more stamps to go`}
+            {rewardReady
+              ? "Your free reward visit is ready"
+              : `${stampsLeft} more paid ${stampsLeft === 1 ? "visit" : "visits"} to go`}
           </Text>
           <Text style={[shared.cardMuted, styles.actionSub]}>
             {rewardReady
-              ? "Show this card at the counter to claim it."
-              : "One stamp per visit. One visit per day."}
+              ? "Redeeming here is recorded on this device only."
+              : "One paid visit per stamp. One stamp per day."}
           </Text>
         </View>
         <TouchableOpacity
@@ -81,17 +97,32 @@ export function WalletScreen({
           style={[styles.actionButton, rewardReady && styles.actionButtonReady]}
         >
           <Text style={styles.actionButtonText}>
-            {rewardReady ? "Redeem" : "Get a stamp"}
+            {rewardReady ? "Redeem locally" : "Get a stamp"}
           </Text>
         </TouchableOpacity>
       </View>
+
+      {unavailableReason !== null && (
+        <Text style={styles.privacy}>{unavailableReason}</Text>
+      )}
+
+      {onAddToWallet !== undefined && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          activeOpacity={0.85}
+          onPress={onAddToWallet}
+          style={[styles.actionButton, styles.previewButton]}
+        >
+          <Text style={styles.actionButtonText}>Preview Wallet pass (not issued)</Text>
+        </TouchableOpacity>
+      )}
 
       <View style={[shared.card, styles.nudgeCard]}>
         <View style={styles.nudgeIcon}>
           <Ionicons name="location-outline" size={20} color={colors.darkText} />
         </View>
         <View style={styles.nudgeText}>
-          <Text style={shared.cardTitle}>You are near Corner Cafe</Text>
+          <Text style={shared.cardTitle}>You are near {businessName}</Text>
           <Text style={shared.cardMuted}>{nudgeText}</Text>
         </View>
       </View>
@@ -104,7 +135,7 @@ export function WalletScreen({
           <View style={styles.nudgeText}>
             <Text style={shared.cardTitle}>Happy birthday</Text>
             <Text style={shared.cardMuted}>
-              Your free treat is ready today. Show this card at the counter.
+              Demo birthday treat. Show this card at the counter.
             </Text>
           </View>
         </View>
@@ -151,6 +182,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: spacing.touchMin,
     paddingHorizontal: 20,
+  },
+  previewButton: {
+    marginTop: spacing.gap,
   },
   actionButtonReady: {
     backgroundColor: colors.lavender,
