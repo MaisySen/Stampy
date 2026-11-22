@@ -19,12 +19,13 @@ const response = (status) => new Response(null, {status,headers:{'Cache-Control'
 
 // The core accepts asynchronous persistence while keeping the existing SQLite API.
 // The injected adapters are private server code, not request input.
-export function createWalletService({origin, apple, google, lookupOwnedPass, now = Date.now, grantStore, stampStore, openUpdates}) {
+export function createWalletService({origin, apple, google, lookupOwnedPass, authorizeStamp, now = Date.now, grantStore, stampStore, openUpdates}) {
   const url = new URL(origin);
   if (url.protocol !== 'https:' || url.href !== `${url.origin}/` || typeof lookupOwnedPass !== 'function' ||
       typeof now !== 'function' || (google !== undefined && typeof google !== 'function') ||
       !['insertWithinCap','claim','close'].every((k) => typeof grantStore?.[k] === 'function') ||
       (stampStore !== undefined && !['record','count'].every((k) => typeof stampStore?.[k] === 'function')) ||
+      (authorizeStamp !== undefined && typeof authorizeStamp !== 'function') ||
       (apple !== undefined && typeof openUpdates !== 'function')) throw new Error('Invalid Wallet service configuration.');
   let passStore, sender;
   if (apple !== undefined) {
@@ -91,12 +92,13 @@ export function createWalletService({origin, apple, google, lookupOwnedPass, now
     if (!row || closed) return false;
     return passStore.putPass(row.record,{sourceVersion:row.version});
   }
-  // Stamp intake needs the committed merchant ledger to verify the pass
-  // and business, and the Apple update path to queue the pass refresh.
-  // Without either, POST /wallet/stamps answers 503. The stamp itself is
-  // recorded first; the refresh is best effort and never fails the stamp.
-  const stampIntake = (stampStore && apple) ? createStampIntakeHandler({
+  // The stamp route is disabled (503) until the host supplies an explicit
+  // authorizer which checks the caller's identity, merchant and staff role.
+  // A known pass ID or a client-side PIN is never sufficient authority.
+  // This intentionally fails closed even when a stamp store is configured.
+  const stampIntake = (stampStore && apple && typeof authorizeStamp === 'function') ? createStampIntakeHandler({
     stampStore,
+    authorizeStamp,
     loadCommittedPass: apple.loadCommittedPass,
     now,
     onRecorded: (passId) => committedAppleChange(passId).catch(() => {}),
