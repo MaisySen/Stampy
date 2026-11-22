@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, shared, spacing, type } from "../theme";
@@ -26,20 +25,22 @@ export function AnalyticsScreen({
   onClear,
   onRestore,
 }: AnalyticsScreenProps) {
-  const [sentIds, setSentIds] = useState<string[]>([]);
   const empty = business.stampsGiven === 0;
   const today = todayIso();
   const winback = lapsedCustomers(customers, today);
   const birthdays = birthdayCustomers(customers, new Date());
 
-  function sendWinback(id: string) {
-    setSentIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  }
-
   return (
     <View>
       <Text style={styles.title}>Analytics</Text>
       <Text style={styles.sub}>Last 7 days, {business.name}.</Text>
+      <View style={[shared.card, styles.previewNotice]}>
+        <Text style={shared.cardTitle}>Demo data, not live activity</Text>
+        <Text style={shared.cardMuted}>
+          Customers, stamp counts and charts on this screen are sample records.
+          No customer messages or Wallet rewards are sent from Analytics.
+        </Text>
+      </View>
 
       <View style={[shared.card, styles.hero]}>
         <Text style={styles.heroLabel}>Stamps given</Text>
@@ -52,12 +53,6 @@ export function AnalyticsScreen({
           <View style={styles.heroStat}>
             <Text style={styles.heroStatLabel}>Repeat visits</Text>
             <Text style={styles.heroStatValue}>{business.repeatRate}%</Text>
-          </View>
-          <View style={styles.heroStat}>
-            <Text style={styles.heroStatLabel}>Reward rate</Text>
-            <Text style={styles.heroStatValue}>
-              {business.visitors === 0 ? "0%" : "12%"}
-            </Text>
           </View>
         </View>
       </View>
@@ -115,17 +110,15 @@ export function AnalyticsScreen({
       <View style={[shared.card, styles.listCard]}>
         <Text style={shared.cardTitle}>Win-back</Text>
         <Text style={[shared.cardMuted, styles.listSub]}>
-          Quiet for 30 days or more. One nudge each, only with a real offer.
+          Sample customers quiet for 30 days or more. Messaging is not connected.
         </Text>
         {winback.length === 0 ? (
           <Text style={[shared.cardMuted, styles.emptySub]}>
-            No one needs a win-back right now. Everyone has visited in the
-            last 30 days.
+            No sample customers currently match the 30-day win-back rule.
           </Text>
         ) : (
           winback.map((c) => {
             const quietDays = daysBetween(c.lastVisit, today);
-            const sent = sentIds.includes(c.id);
             return (
               <View key={c.id} style={styles.listRow}>
                 <View style={styles.listIcon}>
@@ -137,18 +130,7 @@ export function AnalyticsScreen({
                     {c.visits} visits, quiet for {quietDays} days
                   </Text>
                 </View>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: sent }}
-                  activeOpacity={0.85}
-                  disabled={sent}
-                  onPress={() => sendWinback(c.id)}
-                  style={[styles.nudgeButton, sent && styles.nudgeButtonSent]}
-                >
-                  <Text style={styles.nudgeButtonText}>
-                    {sent ? "Sent" : "Send nudge"}
-                  </Text>
-                </TouchableOpacity>
+                <Text style={styles.previewOnly}>Preview only</Text>
               </View>
             );
           })
@@ -158,7 +140,7 @@ export function AnalyticsScreen({
       <View style={[shared.card, styles.listCard]}>
         <Text style={shared.cardTitle}>Birthdays this month</Text>
         <Text style={[shared.cardMuted, styles.listSub]}>
-          A free treat lands on their card on the day.
+          Sample birthdays only. No birthday reward is issued from this screen.
         </Text>
         {birthdays.length === 0 ? (
           <Text style={[shared.cardMuted, styles.emptySub]}>
@@ -343,22 +325,14 @@ const styles = StyleSheet.create({
     color: colors.muted,
     ...type.caption,
   },
-  nudgeButton: {
-    alignItems: "center",
-    backgroundColor: colors.lavender,
-    borderRadius: spacing.radiusPill,
-    justifyContent: "center",
-    minHeight: spacing.touchMin,
-    paddingHorizontal: 16,
+  previewNotice: {
+    marginTop: spacing.gap,
+    gap: 8,
   },
-  nudgeButtonSent: {
-    backgroundColor: colors.surface2,
-    opacity: 0.7,
-  },
-  nudgeButtonText: {
-    color: colors.darkText,
-    fontSize: 13,
-    fontWeight: "700",
+  previewOnly: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "600",
   },
   range: {
     backgroundColor: colors.surface2,
