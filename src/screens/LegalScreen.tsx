@@ -19,15 +19,15 @@ const SECTIONS: Record<LegalPage, Array<{ title: string; body: string }>> = {
   privacy: [
     {
       title: "What Stampies collects",
-      body: "As little as possible. A card holds the business name, the reward, and the stamp count. A dashboard holds stamp counts and visit counts. No login is needed, and no account is created.",
+      body: "As little as possible. In this local demo, the business name, reward, paid visit count and stamp progress are saved on this device only, with synthetic sample data. No login is needed, and no account is created.",
     },
     {
       title: "Location",
-      body: "A Wallet card only knows where the business is. The phone works out when the customer is nearby, on the device. Stampies does not track a customer live.",
+      body: "This demo does not use your location. Planned design, not active: a Wallet card would only know where the business is, and the phone would work out on the device when the customer is nearby. Live tracking is not part of that design.",
     },
     {
       title: "Data on the device",
-      body: "For now, data is stored on the device. A business can clear its demo data from the Analytics screen.",
+      body: "In this demo, data is stored on the device. Nothing is sent to a server. A business can clear its demo data from the Analytics screen.",
     },
     {
       title: "Ads",
@@ -37,19 +37,19 @@ const SECTIONS: Record<LegalPage, Array<{ title: string; body: string }>> = {
   terms: [
     {
       title: "What Stampies is",
-      body: "A digital loyalty card for small businesses. Add a card to Wallet, earn stamps at the counter, and redeem a reward when the card is full.",
+      body: "A digital loyalty card for small businesses. This local demo previews the card, stamping and a local reward record. Adding a card to Wallet and server confirmed rewards are planned and not live.",
     },
     {
       title: "Rules for customers",
-      body: "One stamp per visit, one visit per day per business. Stamps cannot be sold or transferred. A reward is claimed at the counter.",
+      body: "Planned rules: one stamp per paid visit, one stamp per day per business. Stamps cannot be sold or transferred. After the paid visits, the next visit is the free reward visit. In this demo, redemption is a local record on this device.",
     },
     {
       title: "Rules for businesses",
-      body: "A business sets its own reward, stamp target, and links. A business must not mislead customers about a reward, or add stamps for visits that did not happen.",
+      body: "A business sets its own reward, paid visit count, and links. A business must not mislead customers about a reward, or add stamps for visits that did not happen.",
     },
     {
       title: "Fraud controls",
-      body: "Staff stamps need a 4 digit staff code. A stamp is blocked during the 60 second cooldown, and after one stamp per day.",
+      body: "Demo checks on this device only, not enforced by a server: staff stamps need a 4 digit staff code, a stamp is blocked during the 60 second cooldown, and after one stamp per day.",
     },
   ],
   support: [
@@ -59,15 +59,15 @@ const SECTIONS: Record<LegalPage, Array<{ title: string; body: string }>> = {
     },
     {
       title: "Stamp did not land",
-      body: "One stamp per day per business, and 60 seconds between stamps. Wait, then try again. For a staff stamp, staff must enter the correct 4 digit staff code.",
+      body: "This demo allows one stamp per day and needs 60 seconds between stamps. Wait, then try again. For a staff stamp, staff must enter the correct 4 digit staff code.",
     },
     {
       title: "Reward is not ready",
-      body: "The card needs 9 stamps by default. The count shows on the Wallet card. A business can change the target when it builds its pass.",
+      body: "The default is 8 paid visits, then the next visit is the free reward visit. The count shows on the Wallet card. A business can change the number of paid visits (3 to 11) in Build your pass.",
     },
     {
       title: "Birthday treat did not arrive",
-      body: "The treat lands on the birthday itself. It needs a birthday on the card.",
+      body: "Birthday treats are planned and not active in this demo.",
     },
   ],
 };

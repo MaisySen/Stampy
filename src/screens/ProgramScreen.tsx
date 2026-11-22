@@ -6,6 +6,7 @@ import type { LegalPage } from "./LegalScreen";
 interface ProgramScreenProps {
   businessName: string;
   reward: string;
+  paidVisits: number;
   birthdayOn: boolean;
   nearbyOn: boolean;
   nfcOn: boolean;
@@ -45,6 +46,7 @@ function ToggleRow({ title, sub, value, onChange }: ToggleRowProps) {
 export function ProgramScreen({
   businessName,
   reward,
+  paidVisits,
   birthdayOn,
   nearbyOn,
   nfcOn,
@@ -69,9 +71,9 @@ export function ProgramScreen({
       >
         <Text style={styles.buildTitle}>Build your pass</Text>
         <Text style={styles.buildSub}>
-          Set the name, reward, colour, and links. Preview the pass live,
-          then publish it. Customers add it to Wallet with a scan, no app
-          download.
+          Set the name, reward, paid visits, colour, and links. Saving keeps
+          the name, reward and paid visits on this device. Publishing and real
+          Wallet passes are not live in this demo.
         </Text>
         <TouchableOpacity
           accessibilityRole="button"
@@ -87,8 +89,9 @@ export function ProgramScreen({
         <Text style={styles.rewardLabel}>Reward rule</Text>
         <Text style={styles.rewardValue}>{reward}</Text>
         <Text style={[shared.cardMuted, styles.rewardSub]}>
-          One rule, easy to explain at the counter. Change it in the next
-          version of this screen.
+          {paidVisits} paid visits, then visit {paidVisits + 1} is the free
+          reward visit. Change it in Build your pass. Saved on this device
+          only.
         </Text>
       </View>
 

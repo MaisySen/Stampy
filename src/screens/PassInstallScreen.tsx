@@ -9,7 +9,8 @@ import {
   initialInstallStatus,
   installErrorMessage,
   installFailed,
-  installStateLabel,
+  LOCAL_PREVIEW_NOTICE,
+  previewStateLabel,
   installSucceeded,
   retryInstall,
   startInstall,
@@ -129,7 +130,7 @@ export function PassInstallScreen({
           {safeStamps}
           <Text style={styles.heroCountTotal}>/{safeTarget}</Text>
         </Text>
-        <Text style={styles.heroLabel}>stamps</Text>
+        <Text style={styles.heroLabel}>paid visits</Text>
         <View style={styles.dots}>
           {dots.map((on, i) => (
             <View
@@ -147,10 +148,9 @@ export function PassInstallScreen({
           <View style={styles.statusIcon}>
             <Ionicons name="checkmark" size={22} color={colors.darkText} />
           </View>
-          <Text style={shared.cardTitle}>Pass added to {walletName}</Text>
+          <Text style={shared.cardTitle}>Preview ready. Not added to {walletName}</Text>
           <Text style={[shared.cardMuted, styles.statusSub]}>
-            Your stamps will update on the pass each time you visit. Show the
-            pass at the counter to claim your reward.
+            {LOCAL_PREVIEW_NOTICE}
           </Text>
           <TouchableOpacity
             accessibilityRole="button"
@@ -166,7 +166,7 @@ export function PassInstallScreen({
           <View style={[styles.statusIcon, styles.statusIconError]}>
             <Ionicons name="alert-outline" size={22} color={colors.darkText} />
           </View>
-          <Text style={shared.cardTitle}>Pass not added</Text>
+          <Text style={shared.cardTitle}>Preview not shown</Text>
           <Text style={[shared.cardMuted, styles.statusSub]}>
             {status.error ?? installErrorMessage("unknown")}
           </Text>
@@ -189,11 +189,9 @@ export function PassInstallScreen({
         </View>
       ) : (
         <View style={[shared.card, styles.statusCard]}>
-          <Text style={shared.cardTitle}>Add to {walletName}</Text>
+          <Text style={shared.cardTitle}>Preview the {walletName} pass</Text>
           <Text style={[shared.cardMuted, styles.statusSub]}>
-            One tap adds the pass. No app to download, no login, no account.
-            Your phone works out when you are near the business, on the
-            device.
+            {LOCAL_PREVIEW_NOTICE}
           </Text>
           <TouchableOpacity
             accessibilityRole="button"
@@ -208,8 +206,8 @@ export function PassInstallScreen({
           >
             <Text style={styles.primaryButtonText}>
               {status.state === "installing"
-                ? installStateLabel("installing")
-                : `Add to ${walletName}`}
+                ? previewStateLabel("installing")
+                : `Preview ${walletName} pass`}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -226,14 +224,14 @@ export function PassInstallScreen({
       <View style={[shared.card, styles.qrCard]}>
         <QrCode size={126} />
         <Text style={[shared.cardMuted, styles.qrHint]}>
-          Or scan this code at the counter to add the pass instead.
+          Placeholder code. It is not a real pass link and cannot be scanned to add a pass.
         </Text>
-        <Text style={styles.qrLink}>{shareLink.trim() || "No pass link yet"}</Text>
+        <Text style={styles.qrLink}>{shareLink.trim() ? `Local preview link, not published: ${shareLink.trim()}` : "No pass link yet"}</Text>
       </View>
 
       <Text style={styles.privacy}>
-        The pass only knows where the business is. Stampies does not track you
-        live.
+        Planned design: the pass would only know where the business is. This
+        preview does not use your location.
       </Text>
     </View>
   );

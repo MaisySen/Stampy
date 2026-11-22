@@ -14,7 +14,7 @@ Customer side:
 
 1. Add the business card to Apple Wallet or Google Wallet.
 2. Earn a stamp at the counter by tap, scan, or staff stamp.
-3. Watch progress on the card. At 8 stamps, the 9th visit earns the reward.
+3. Watch progress on the card. After 8 paid visits, the 9th visit is the free reward visit. The count is set by the business.
 4. Redeem the reward at the counter.
 
 Business side:
@@ -26,7 +26,30 @@ Business side:
 
 ## Pass builder
 
-A business builds its own pass in four steps: Details, Design, Links, Preview. Details are the business name, reward text, and stamp target, with 9 as the default. Design is the brand colour, cover style, and an optional business photo. Links are the menu, Wi-Fi, feedback, and one external link. All fields are business made, optional where marked, and clearable. The Preview step shows a live phone preview titled Building your pass, with the photo front and centre, the stamp count big as 0/9, and a QR code to add the pass to Wallet. Publish shows the share link and QR code. The customer needs no app download to add the pass. Every pass is marked Powered by Stampies.
+A business builds its own pass in four steps: Details, Design, Links, Preview. Details are the business name, reward text, and paid visits, with 8 as the default (3 to 11 allowed). The free reward visit comes after the last paid visit. Design is the brand colour, cover style, and an optional business photo. Links are the menu, Wi-Fi, feedback, and one external link. All fields are business made, optional where marked, and clearable. The Preview step shows a live phone preview titled Building your pass, with the photo front and centre, the paid visit count big as 0/8 by default, and a placeholder QR code. Create local preview link shows a link that is not published. The customer needs no app download to add the pass. Every pass is marked Powered by Stampies.
+
+## Local demo status
+
+This section separates what is verified on this branch from what is not live. The app is a local demo. All sample data is synthetic and stays on the device.
+
+Verified locally (logic tests and a UI flow over synthetic storage):
+
+- A business can save and reopen its name, reward and paid visit count. The default is 8 paid visits, then the 9th visit is the free reward visit. The allowed range is 3 to 11 paid visits.
+- The Wallet, Stamp, Program and pass preview screens read the same saved program. Paid visits and the free reward visit are labelled.
+- Stamp progress, reward eligibility and local redemption are saved and come back after a restart. Redeeming is allowed only when the card is eligible.
+- Invalid saved settings, unreadable saved progress and storage write failures show on screen. Saved progress that cannot be read is never overwritten. Starting a new card is an explicit action.
+- A stamp taken before the offline queue is ready is kept in a saved outbox, then handed to the queue by id once the queue is durable. Retry and restart do not lose or duplicate a stamp. Existing queued data is kept. This holds only once the progress record is actually written; the app does not confirm that while a write is pending or failing, and says so instead of promising it. If saving the progress record also fails, the app says so and stamps exist in this session only until Retry save works. Each stamp carries a program identity fixed when it was taken, so renaming the program does not change its destination. Stamps saved by an older version without that identity are kept in the outbox and are never queued or synced; they are shown with a notice and are not given a guessed destination.
+- The app always shows a LOCAL DEMO banner.
+
+Not live, and not claimed:
+
+- No published program. The link is a local preview link built from the business name, and the QR code is a placeholder that cannot be scanned to add a pass.
+- No issued Apple or Google Wallet pass. Wallet screens are previews.
+- No real scan. The Stamp screen has a demo button that adds a stamp without scanning. NFC tap is simulated.
+- No server confirmation. Redemption is a local record only.
+- Not run here: Postgres Wallet server tests (they need the `pg` package and a Postgres fixture), device builds, EAS builds, Apple or Google Wallet, and any live provider.
+
+Tests: `npm run typecheck`, `npm test` (logic tests and the UI journey test), `npm run scan`. The UI journey test uses react-test-renderer with a stubbed react-native, so it checks behaviour and visible text. It is not a device test and does not check layout.
 
 ## Fraud controls
 

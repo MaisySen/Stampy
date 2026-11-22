@@ -130,7 +130,18 @@ export class MirroredOfflineQueueStore implements PersistentOfflineQueueStore {
       this.loaded = true;
       return;
     }
-    this.mirror = parsed.filter(isQueuedStamp).map((item) => ({ ...item }));
+    const valid = parsed.filter(isQueuedStamp);
+    if (valid.length !== parsed.length) {
+      // Do not drop records we cannot read. The saved queue is left as it
+      // is, this store reports an error, and callers do not write to it.
+      this.error = new Error(
+        `Saved offline queue has ${parsed.length - valid.length} record(s) this version cannot read. They are kept unchanged and the queue works in memory.`,
+      );
+      this.mirror = [];
+      this.loaded = true;
+      return;
+    }
+    this.mirror = valid.map((item) => ({ ...item }));
     this.loaded = true;
     this.error = null;
   }

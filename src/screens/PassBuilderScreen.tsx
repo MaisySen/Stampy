@@ -10,13 +10,20 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, shared, spacing, type } from "../theme";
-import { suggestedReward } from "../lib/stamps";
+import {
+  DEFAULT_PAID_VISITS,
+  MAX_PAID_VISITS,
+  MIN_PAID_VISITS,
+  defaultReward,
+  paidVisitsRangeText,
+} from "../lib/program";
+import type { ProgramSettings } from "../lib/program";
 import { BRAND_COLORS, COVERS, PassPreview, passSlug } from "../components/PassPreview";
 import type { PassDraft } from "../components/PassPreview";
 
 const STEPS = ["Details", "Design", "Links", "Preview"];
-const MIN_TARGET = 4;
-const MAX_TARGET = 12;
+const MIN_TARGET = MIN_PAID_VISITS;
+const MAX_TARGET = MAX_PAID_VISITS;
 
 const DIFFERENTIATORS = [
   "Wallet pass",
@@ -28,15 +35,22 @@ const DIFFERENTIATORS = [
   "Analytics",
 ];
 
+export type BuilderSaveResult = { ok: true } | { ok: false; errors: string[] };
+
 interface PassBuilderScreenProps {
   initialName: string;
   initialReward: string;
+  initialPaidVisits: number;
+  /** Save the program on this device. Resolves with errors to show when it fails. */
+  onSave: (program: ProgramSettings) => Promise<BuilderSaveResult>;
   onClose: () => void;
 }
 
 export function PassBuilderScreen({
   initialName,
   initialReward,
+  initialPaidVisits,
+  onSave,
   onClose,
 }: PassBuilderScreenProps) {
   const [step, setStep] = useState(0);
@@ -44,11 +58,18 @@ export function PassBuilderScreen({
   const [draft, setDraft] = useState<PassDraft>({
     businessName: initialName,
     reward: initialReward,
-    target: 9,
+    target: initialPaidVisits,
     brandColor: BRAND_COLORS[0].value,
     cover: COVERS[0].name,
     photoUrl: "",
   });
+  const [saved, setSaved] = useState<ProgramSettings>({
+    name: initialName,
+    reward: initialReward,
+    paidVisits: initialPaidVisits,
+  });
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "error">("idle");
+  const [saveErrors, setSaveErrors] = useState<string[]>([]);
   const [menuUrl, setMenuUrl] = useState("");
   const [wifiName, setWifiName] = useState("");
   const [wifiPassword, setWifiPassword] = useState("");
@@ -72,8 +93,8 @@ export function PassBuilderScreen({
       target: next,
       reward:
         prev.reward.trim().length === 0 ||
-        prev.reward === suggestedReward(prev.target)
-          ? suggestedReward(next)
+        prev.reward === defaultReward(prev.target)
+          ? defaultReward(next)
           : prev.reward,
     }));
   }
@@ -82,7 +103,7 @@ export function PassBuilderScreen({
     setDraft({
       businessName: "",
       reward: "",
-      target: 9,
+      target: DEFAULT_PAID_VISITS,
       brandColor: BRAND_COLORS[0].value,
       cover: COVERS[0].name,
       photoUrl: "",
@@ -97,9 +118,35 @@ export function PassBuilderScreen({
     setPublished(false);
   }
 
+  const dirty =
+    draft.businessName.trim() !== saved.name ||
+    draft.reward.trim() !== saved.reward ||
+    draft.target !== saved.paidVisits;
+
+  async function saveProgramNow() {
+    setSaveState("saving");
+    setSaveErrors([]);
+    const result = await onSave({
+      name: draft.businessName,
+      reward: draft.reward,
+      paidVisits: draft.target,
+    });
+    if (result.ok) {
+      setSaved({
+        name: draft.businessName.trim(),
+        reward: draft.reward.trim(),
+        paidVisits: draft.target,
+      });
+      setSaveState("idle");
+    } else {
+      setSaveErrors(result.errors);
+      setSaveState("error");
+    }
+  }
+
   async function sharePass() {
     await Share.share({
-      message: `Add my Stampies pass: ${shareLink}`,
+      message: `Local preview only, not a live pass: ${shareLink}`,
     });
   }
 
@@ -179,15 +226,15 @@ export function PassBuilderScreen({
             <TextInput
               accessibilityLabel="Reward text"
               onChangeText={(v) => set("reward", v)}
-              placeholder={suggestedReward(draft.target)}
+              placeholder={defaultReward(draft.target)}
               placeholderTextColor={colors.faint}
               style={styles.input}
               value={draft.reward}
             />
-            <Text style={styles.fieldLabel}>Stamp target</Text>
+            <Text style={styles.fieldLabel}>Paid visits</Text>
             <View style={styles.stepper}>
               <TouchableOpacity
-                accessibilityLabel="Fewer stamps"
+                accessibilityLabel="Fewer paid visits"
                 accessibilityRole="button"
                 activeOpacity={0.85}
                 disabled={draft.target <= MIN_TARGET}
@@ -198,7 +245,7 @@ export function PassBuilderScreen({
               </TouchableOpacity>
               <Text style={styles.targetNumber}>{draft.target}</Text>
               <TouchableOpacity
-                accessibilityLabel="More stamps"
+                accessibilityLabel="More paid visits"
                 accessibilityRole="button"
                 activeOpacity={0.85}
                 disabled={draft.target >= MAX_TARGET}
@@ -209,8 +256,31 @@ export function PassBuilderScreen({
               </TouchableOpacity>
             </View>
             <Text style={styles.hint}>
-              Each business sets its own buy count and reward. 9 is the
-              usual default.
+              {draft.target} paid visits, then visit {draft.target + 1} is the
+              free reward visit. Each business sets its own count, {paidVisitsRangeText()}.
+              The default is {DEFAULT_PAID_VISITS}.
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityState={{ disabled: saveState === "saving" }}
+              activeOpacity={0.85}
+              disabled={saveState === "saving"}
+              onPress={saveProgramNow}
+              style={[styles.primaryButton, saveState === "saving" && styles.stepperButtonDisabled]}
+            >
+              <Text style={styles.primaryButtonText}>
+                {saveState === "saving" ? "Saving" : "Save program"}
+              </Text>
+            </TouchableOpacity>
+            {saveErrors.map((message) => (
+              <Text key={message} style={[styles.hint, { color: colors.red }]}>
+                {message}
+              </Text>
+            ))}
+            <Text style={styles.hint}>
+              {dirty
+                ? "Not saved yet. Saving keeps this on this device only."
+                : "Saved on this device. Local demo, not sent to any server."}
             </Text>
           </View>
         )}
@@ -353,6 +423,9 @@ export function PassBuilderScreen({
               This is what the customer sees. Check it, edit it, then publish.
             </Text>
             <PassPreview draft={draft} stamps={0} />
+            <Text style={styles.hint}>
+              Preview only. The code in it is a placeholder, not a real pass.
+            </Text>
             <View style={styles.chips}>
               {DIFFERENTIATORS.map((d) => (
                 <View key={d} style={styles.chip}>
@@ -361,15 +434,15 @@ export function PassBuilderScreen({
               ))}
             </View>
             <Text style={styles.hint}>
-              Every pass includes these. No app download is needed to add it
-              to Wallet.
+              A Stampies pass is planned to include these. Real Wallet passes and a
+              published link are not live in this demo.
             </Text>
             {published ? (
               <View style={[shared.card, styles.publishedCard]}>
                 <View style={styles.publishedRow}>
                   <Ionicons name="checkmark-circle" size={28} color={colors.green} />
                   <View style={styles.publishedText}>
-                    <Text style={shared.cardTitle}>Published</Text>
+                    <Text style={shared.cardTitle}>Local preview link, not published</Text>
                     <Text style={shared.cardMuted}>{shareLink}</Text>
                   </View>
                 </View>
@@ -379,7 +452,7 @@ export function PassBuilderScreen({
                   onPress={sharePass}
                   style={styles.primaryButton}
                 >
-                  <Text style={styles.primaryButtonText}>Share the pass</Text>
+                  <Text style={styles.primaryButtonText}>Share the preview link</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   accessibilityRole="button"
@@ -397,7 +470,7 @@ export function PassBuilderScreen({
                 onPress={() => setPublished(true)}
                 style={styles.primaryButton}
               >
-                <Text style={styles.primaryButtonText}>Publish pass</Text>
+                <Text style={styles.primaryButtonText}>Create local preview link</Text>
               </TouchableOpacity>
             )}
           </View>
