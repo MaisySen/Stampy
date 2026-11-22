@@ -45,9 +45,11 @@ export function WalletScreen({
   return (
     <View>
       <View style={styles.greeting}>
-        <View>
+        <View style={styles.greetingText}>
           <Text style={styles.hello}>Good morning</Text>
-          <Text style={styles.name}>{businessName} regular</Text>
+          <Text numberOfLines={2} style={styles.name}>
+            {businessName} regular
+          </Text>
         </View>
         <TouchableOpacity
           accessibilityLabel="Alerts"
@@ -243,6 +245,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 16,
     marginTop: 4,
+  },
+  greetingText: {
+    flex: 1,
+    paddingRight: 12,
   },
   hello: {
     color: colors.muted,
