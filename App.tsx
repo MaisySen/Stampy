@@ -183,7 +183,6 @@ export default function App() {
             stamps={stamps}
             onRedeem={redeemReward}
             onGoToStamp={() => setTab("stamp")}
-            onAddToWallet={() => setInstallOpen(true)}
           />
         )}
         {tab === "stamp" && (
