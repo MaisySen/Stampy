@@ -665,3 +665,35 @@ test("a stamp saved by an older version without a program is kept, shown, and ne
     r.unmount();
   }
 });
+
+test("when the ledger write and the queue write both fail, no notice promises the stamp is saved or survives restart", async () => {
+  const h = harness();
+  const r = await h.mount();
+  try {
+    h.queueBackend.failWrites = true;
+    h.backend.failWrites = true;
+    await stampOnce(r);
+    await settle();
+    const text = screenText(r);
+    assert.match(text, /Could not write to the sync queue/);
+    assert.match(text, /Progress is not saved/);
+    assert.match(text, /this session only/);
+    assert.doesNotMatch(text, /nothing is lost/i);
+    assert.doesNotMatch(text, /Stamps stay saved in the progress record/);
+    assert.ok(hasButton(r, "Retry handoff"));
+    assert.ok(hasButton(r, "Retry save"));
+    h.backend.failWrites = false;
+    await press(r, "Retry save");
+    await settle();
+    assert.equal(savedLedger(h.backend).progress, 1);
+    assert.equal(savedLedger(h.backend).outbox.length, 1);
+    assert.match(screenText(r), /Stamps stay saved in the progress record/);
+    h.queueBackend.failWrites = false;
+    await press(r, "Retry handoff");
+    await settle();
+    assert.deepEqual(queuedIds(h.queueBackend), [firstStampId(h)]);
+    assert.equal(savedLedger(h.backend).outbox.length, 0);
+  } finally {
+    r.unmount();
+  }
+});

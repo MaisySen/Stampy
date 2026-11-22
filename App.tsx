@@ -158,7 +158,7 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
           rehandRef.current = true;
         } else {
           setHandoffProblem(
-            "Could not write to the sync queue. Stamps stay saved here and nothing is lost.",
+            "Could not write to the sync queue.",
           );
         }
       } while (rehandRef.current);
@@ -392,6 +392,10 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
       onAction: resetSavedProgress,
     });
   }
+  const keptHere =
+    saveProblem === null
+      ? "Stamps stay saved in the progress record on this device."
+      : "Progress is also not saved, so stamps are kept in this session only and would be lost on restart until Retry save works.";
   if (saveProblem !== null) {
     notices.push({
       id: "save",
@@ -410,7 +414,7 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
     notices.push({
       id: "queue",
       tone: "error",
-      text: `Sync queue is memory-only this session (${queueState.reason}). New stamps stay saved in the progress record.`,
+      text: `Sync queue is memory-only this session (${queueState.reason}). ${keptHere}`,
       actionLabel: "Retry queue",
       onAction: () => void controllerRef.current?.retry(),
     });
@@ -418,14 +422,14 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
     notices.push({
       id: "queue",
       tone: "info",
-      text: "Sync queue is starting. New stamps are kept on this device.",
+      text: `Sync queue is starting. ${keptHere}`,
     });
   }
   if (handoffProblem !== null) {
     notices.push({
       id: "handoff",
       tone: "error",
-      text: handoffProblem,
+      text: `${handoffProblem} ${keptHere}`,
       actionLabel: "Retry handoff",
       onAction: () => void handOff(),
     });
@@ -434,14 +438,14 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
     notices.push({
       id: "queue-conflict",
       tone: "error",
-      text: `${queueConflicts} stamp(s) were not handed to the sync queue because the queue already holds a different stamp with the same id. They stay saved here and nothing was removed.`,
+      text: `${queueConflicts} stamp(s) were not handed to the sync queue because the queue already holds a different stamp with the same id. ${keptHere} Nothing was removed from the outbox.`,
     });
   }
   if (queueUnrouted > 0) {
     notices.push({
       id: "queue-unrouted",
       tone: "error",
-      text: `${queueUnrouted} stamp(s) saved by an older version have no recorded program, so they were not handed to the sync queue. They stay saved here and nothing was removed.`,
+      text: `${queueUnrouted} stamp(s) saved by an older version have no recorded program, so they were not handed to the sync queue. ${keptHere} Nothing was removed from the outbox. They are not synced.`,
     });
   }
   if (ledger.outbox.length > 0 && queueState.phase === "durable") {

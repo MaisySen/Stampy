@@ -38,7 +38,7 @@ Verified locally (logic tests and a UI flow over synthetic storage):
 - The Wallet, Stamp, Program and pass preview screens read the same saved program. Paid visits and the free reward visit are labelled.
 - Stamp progress, reward eligibility and local redemption are saved and come back after a restart. Redeeming is allowed only when the card is eligible.
 - Invalid saved settings, unreadable saved progress and storage write failures show on screen. Saved progress that cannot be read is never overwritten. Starting a new card is an explicit action.
-- A stamp taken before the offline queue is ready is kept in a saved outbox, then handed to the queue by id once the queue is durable. Retry and restart do not lose or duplicate a stamp. Existing queued data is kept.
+- A stamp taken before the offline queue is ready is kept in a saved outbox, then handed to the queue by id once the queue is durable. Retry and restart do not lose or duplicate a stamp. Existing queued data is kept. This holds only while the progress record is saved. If saving the progress record also fails, the app says so and stamps exist in this session only until Retry save works. Each stamp carries a program identity fixed when it was taken, so renaming the program does not change its destination. Stamps saved by an older version without that identity are kept in the outbox and are never queued or synced; they are shown with a notice and are not given a guessed destination.
 - The app always shows a LOCAL DEMO banner.
 
 Not live, and not claimed:
