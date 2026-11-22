@@ -38,24 +38,35 @@ function fixture({target = 2, dailyLimit = 20, cooldownSeconds = 0,
           if (sql === 'COMMIT') { state.commits++; began = false; return {rows: []}; }
           if (sql === 'ROLLBACK') { state.rollbacks++; began = false; return {rows: []}; }
           assert.ok(began, 'queries must run inside transaction');
-          if (sql.startsWith('SELECT id FROM stampies_identity.merchants')) {
-            return {rows: state.merchantStatus === 'active' ? [merchant] : []};
+          if (sql.startsWith('SELECT stampies_identity.lock_staff_authority')) {
+            state.membershipQueries++;
+            const allowed = ['create_location','create_program'].includes(params[3]) ? ['owner','admin'] : ['owner','admin','manager','staff'];
+            if (params[0] !== businessId || state.merchantStatus !== 'active' || state.memberStatus !== 'active' || !allowed.includes(state.role)) {
+              const error = new Error('FORBIDDEN'); error.code = '42501'; throw error;
+            }
+            return {rows: [merchant]};
           }
-          if (sql.includes('FOR UPDATE OF m')) {
+          if (sql.startsWith('SELECT stampies_identity.lock_enrollment_merchant')) {
+            if (state.merchantStatus !== 'active') {
+              const error = new Error('PROGRAM_UNAVAILABLE'); error.code = '42501'; throw error;
+            }
+            return {rows: [merchant]};
+          }
+          if (sql.startsWith('SELECT program_id FROM stampies_loyalty.memberships')) return {rows: [{program_id: programId}]};
+          if (sql.startsWith('SELECT id,status,target')) return {rows: [{id: programId,
+            status: state.programStatus, target, daily_limit: dailyLimit,
+            cooldown_seconds: cooldownSeconds, time_zone: timeZone, reward_text: 'Free item'}]};
+          if (sql.startsWith('SELECT id,program_id,balance,status')) {
             state.lockedReads++;
-            return {rows: [{
-              id: membershipId, balance: state.balance, member_status: state.memberStatus,
-              target, daily_limit: dailyLimit, cooldown_seconds: cooldownSeconds,
-              time_zone: timeZone, program_status: state.programStatus,
-            }]};
+            return {rows: [{id: membershipId, program_id: programId, balance: state.balance, status: 'active'}]};
           }
           if (sql.startsWith('SELECT event_type,request_digest,next_balance FROM stampies_loyalty.events')) {
             const event = state.events.find((e) => e.membershipId === params[0] && e.key === params[1]);
             return {rows: event ? [{event_type: event.kind,
               request_digest: event.digest, next_balance: event.next}] : []};
           }
-          if (sql.startsWith('SELECT id FROM stampies_loyalty.locations')) {
-            return {rows: params[0] === locationId && params[1] === merchantId ? [{id: locationId}] : []};
+          if (sql.startsWith('SELECT id,status FROM stampies_loyalty.locations')) {
+            return {rows: params[0] === merchantId ? [{id: params[1],status: 'active'}] : []};
           }
           if (sql.startsWith('SELECT COUNT(*)::int AS total FROM stampies_loyalty.events')) {
             return {rows: [{total: state.events.filter((e) =>
@@ -97,21 +108,21 @@ function fixture({target = 2, dailyLimit = 20, cooldownSeconds = 0,
             state.grants.set(params[0], {merchantId: params[1], programId: params[2], expires: params[3]});
             return {rows: []};
           }
-          if (sql.startsWith('SELECT p.id,p.merchant_id FROM stampies_loyalty.programs')) {
+          if (sql.startsWith('SELECT id,merchant_id FROM stampies_loyalty.programs')) {
             return {rows: params[0] === publicCode ? [{id: programId, merchant_id: merchantId}] : []};
           }
           if (sql.startsWith('DELETE FROM stampies_loyalty.enrollment_grants')) {
             const held = state.grants.get(params[0]);
             if (!held || held.merchantId !== params[1] || held.programId !== params[2] ||
-                held.expires <= params[3]) return {rows: []};
+                false) return {rows: []};
             state.grants.delete(params[0]);
-            return {rows: [{digest: params[0]}]};
+            return {rows: [{expires_at: held.expires}]};
           }
           if (sql.startsWith('INSERT INTO stampies_loyalty.memberships')) {
             return {rows: [{id: membershipId, pass_id: params[2], balance: 0}]};
           }
-          if (sql.startsWith('SELECT m.id,m.pass_id,m.balance')) {
-            return {rows: [{id: membershipId, pass_id: 'stp_123456789abcdef0123456789abcdef0',
+          if (sql.startsWith('SELECT id,program_id,pass_id,balance')) {
+            return {rows: [{id: membershipId, program_id: programId, pass_id: 'stp_123456789abcdef0123456789abcdef0',
               balance: state.balance, lifetime_stamps: state.lifetimeStamps,
               rewards_redeemed: state.rewardsRedeemed, target, status: 'active'}]};
           }
@@ -124,11 +135,7 @@ function fixture({target = 2, dailyLimit = 20, cooldownSeconds = 0,
     pool, now: () => state.time,
     verifyAccessToken: async (token) => token === goodAccessToken ?
       {iss: 'https://id.example/', sub: 'user-1'} : null,
-    lookupMembership: async ({businessId: requested}) => {
-      state.membershipQueries++;
-      return {businessId: requested, role: state.role,
-        memberStatus: state.memberStatus, merchantStatus: state.merchantStatus};
-    },
+
   });
   return {ledger, state, setPublicCode: (x) => {publicCode = x;}};
 }
@@ -200,7 +207,7 @@ test('cooldown, merchant suspension, blocked pass and staff revocation fail clos
   await rejected(() => ledger.issueStamp(stampArgs(3)), 'FORBIDDEN');
   state.merchantStatus = 'active';
   state.programStatus = 'paused';
-  await rejected(() => ledger.issueStamp(stampArgs(3)), 'PASS_UNAVAILABLE');
+  await rejected(() => ledger.issueStamp(stampArgs(3)), 'PROGRAM_UNAVAILABLE');
   state.programStatus = 'active';
   state.memberStatus = 'blocked';
   await rejected(() => ledger.issueStamp(stampArgs(3)), 'FORBIDDEN');

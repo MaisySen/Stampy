@@ -1,5 +1,5 @@
 // Production-oriented, merchant-scoped transactional loyalty ledger.
-// Server-only. Pair with the verified OIDC and live membership lookup in PR #5.
+// Server-only. Uses verified OIDC identity and same-transaction authority locks.
 // No HTTP route, mock auth, client-controlled balances, demo rows or device
 // secrets are supplied here. The host must expose ONLY authenticated handlers.
 import {createHash, randomBytes, randomUUID} from 'node:crypto';
@@ -9,9 +9,6 @@ const businessPattern = /^[A-Za-z0-9_-]{1,60}$/;
 const requestPattern = /^[A-Za-z0-9_-]{16,100}$/;
 const publicCodePattern = /^[A-Za-z0-9_-]{20,64}$/;
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
-const writerRoles = new Set(['owner', 'admin', 'manager', 'staff']);
-const managerRoles = new Set(['owner', 'admin', 'manager']);
-const ownerRoles = new Set(['owner', 'admin']);
 
 export class LoyaltyError extends Error {
   constructor(code) {
@@ -53,36 +50,52 @@ function requestDigest({kind, businessId, membershipId, locationId, actor}) {
 }
 
 export function createPostgresLoyaltyLedger({
-  pool, verifyAccessToken, lookupMembership, now = () => new Date(),
+  pool, verifyAccessToken, now = () => new Date(),
 } = {}) {
   if (typeof pool?.connect !== 'function' ||
       typeof verifyAccessToken !== 'function' ||
-      typeof lookupMembership !== 'function' ||
       typeof now !== 'function') {
-    throw new Error('Loyalty ledger requires Postgres and trusted OIDC/member adapters.');
+    throw new Error('Loyalty ledger requires Postgres and a trusted OIDC verifier.');
   }
 
-  async function authorize(accessToken, businessId, roles) {
+  // JWT verification is outside the transaction. Its claims are identity only,
+  // never permission: canonical membership is checked/locked on its DB client.
+  async function identity(accessToken, businessId) {
     if (typeof accessToken !== 'string' || accessToken.length > 12288 ||
         !validBusiness(businessId)) deny('UNAUTHORIZED');
-    let actor, member;
-    try {
-      actor = await verifyAccessToken(accessToken);
-      if (!actor || typeof actor.iss !== 'string' || typeof actor.sub !== 'string') {
-        deny('UNAUTHORIZED');
-      }
-      member = await lookupMembership({
-        issuer: actor.iss, subject: actor.sub, businessId,
-      });
-    } catch {
-      deny('UNAUTHORIZED');
-    }
-    if (member?.businessId !== businessId ||
-        member?.merchantStatus !== 'active' ||
-        member?.memberStatus !== 'active' || !roles.has(member?.role)) {
-      deny('FORBIDDEN');
-    }
+    let actor;
+    try { actor = await verifyAccessToken(accessToken); } catch { deny('UNAUTHORIZED'); }
+    if (!actor || typeof actor.iss !== 'string' || actor.iss.length < 8 || actor.iss.length > 512 ||
+        typeof actor.sub !== 'string' || !actor.sub.length || actor.sub.length > 255) deny('UNAUTHORIZED');
     return {iss: actor.iss, sub: actor.sub};
+  }
+
+  async function authority(client, actor, businessId, operation) {
+    const row = one(await client.query(
+      'SELECT stampies_identity.lock_staff_authority($1,$2,$3,$4) AS id',
+      [businessId, actor.iss, actor.sub, operation],
+    ));
+    if (!row || !validId(row.id)) deny('FORBIDDEN');
+    return row.id;
+  }
+
+  async function lockProgram(client, merchantId, programId) {
+    const row = one(await client.query(
+      'SELECT id,status,target,daily_limit,cooldown_seconds,time_zone,reward_text FROM stampies_loyalty.programs WHERE merchant_id=$1 AND id=$2 FOR SHARE',
+      [merchantId, programId],
+    ));
+    if (!row || row.status !== 'active') deny('PROGRAM_UNAVAILABLE');
+    return row;
+  }
+
+  async function discoverProgram(client, merchantId, membershipId) {
+    // Discovery is not authority. Revalidate this relation under the card lock.
+    const row = one(await client.query(
+      'SELECT program_id FROM stampies_loyalty.memberships WHERE merchant_id=$1 AND id=$2',
+      [merchantId, membershipId],
+    ));
+    if (!row) deny('PASS_UNAVAILABLE');
+    return row.program_id;
   }
 
   async function transaction(run) {
@@ -94,27 +107,18 @@ export function createPostgresLoyaltyLedger({
       return result;
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch { /* preserve the original error */ }
+      if (error?.code === '42501') deny(error.message === 'PROGRAM_UNAVAILABLE' ? 'PROGRAM_UNAVAILABLE' : 'FORBIDDEN');
       throw error;
     } finally {
       client.release();
     }
   }
 
-  async function merchant(client, businessId) {
-    const result = await client.query(
-      'SELECT id FROM stampies_identity.merchants WHERE business_id=$1 AND status=$2',
-      [businessId, 'active'],
-    );
-    const row = one(result);
-    if (!row) deny('MERCHANT_UNAVAILABLE');
-    return row.id;
-  }
-
   async function createLocation({accessToken, businessId, code, name}) {
-    await authorize(accessToken, businessId, ownerRoles);
+    const actor = await identity(accessToken, businessId);
     if (!validBusiness(code) || !clean(name, 160)) deny('INVALID_LOCATION');
     return transaction(async (client) => {
-      const merchantId = await merchant(client, businessId);
+      const merchantId = await authority(client, actor, businessId, 'create_location');
       const row = one(await client.query(
         'INSERT INTO stampies_loyalty.locations(merchant_id,code,name) VALUES($1,$2,$3) RETURNING id,code,name',
         [merchantId, code, name.trim()],
@@ -127,7 +131,7 @@ export function createPostgresLoyaltyLedger({
     accessToken, businessId, rewardText, target,
     dailyLimit = 1, cooldownSeconds = 60, timeZone,
   }) {
-    await authorize(accessToken, businessId, ownerRoles);
+    const actor = await identity(accessToken, businessId);
     if (!clean(rewardText, 200) || !Number.isInteger(target) || target < 1 || target > 100 ||
         !Number.isInteger(dailyLimit) || dailyLimit < 1 || dailyLimit > 20 ||
         !Number.isInteger(cooldownSeconds) || cooldownSeconds < 0 ||
@@ -135,7 +139,7 @@ export function createPostgresLoyaltyLedger({
     validateZone(timeZone);
     const publicCode = randomBytes(24).toString('base64url');
     return transaction(async (client) => {
-      const merchantId = await merchant(client, businessId);
+      const merchantId = await authority(client, actor, businessId, 'create_program');
       const row = one(await client.query(
         'INSERT INTO stampies_loyalty.programs(merchant_id,public_code,reward_text,target,daily_limit,cooldown_seconds,time_zone) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,public_code,reward_text,target,daily_limit,cooldown_seconds,time_zone',
         [merchantId, publicCode, rewardText.trim(), target, dailyLimit, cooldownSeconds, timeZone],
@@ -145,17 +149,13 @@ export function createPostgresLoyaltyLedger({
   }
 
   async function createEnrollmentGrant({accessToken, businessId, programId}) {
-    await authorize(accessToken, businessId, writerRoles);
+    const actor = await identity(accessToken, businessId);
     if (!validId(programId)) deny('INVALID_PROGRAM');
     const rawToken = randomBytes(32).toString('base64url');
-    const expires = new Date(nowDate(now).getTime() + 5 * 60 * 1000);
     return transaction(async (client) => {
-      const merchantId = await merchant(client, businessId);
-      const active = one(await client.query(
-        'SELECT id FROM stampies_loyalty.programs WHERE id=$1 AND merchant_id=$2 AND status=$3',
-        [programId, merchantId, 'active'],
-      ));
-      if (!active) deny('PROGRAM_UNAVAILABLE');
+      const merchantId = await authority(client, actor, businessId, 'grant');
+      await lockProgram(client, merchantId, programId);
+      const expires = new Date(nowDate(now).getTime() + 5 * 60 * 1000);
       await client.query(
         'INSERT INTO stampies_loyalty.enrollment_grants(digest,merchant_id,program_id,expires_at) VALUES($1,$2,$3,$4)',
         [digest(rawToken), merchantId, programId, expires.toISOString()],
@@ -172,20 +172,33 @@ export function createPostgresLoyaltyLedger({
       deny('INVALID_ENROLLMENT');
     }
     return transaction(async (client) => {
-      const program = one(await client.query(
-        'SELECT p.id,p.merchant_id FROM stampies_loyalty.programs p JOIN stampies_identity.merchants m ON m.id=p.merchant_id WHERE p.public_code=$1 AND p.status=$2 AND m.status=$3',
-        [publicCode, 'active', 'active'],
+      const discovered = one(await client.query(
+        'SELECT id,merchant_id FROM stampies_loyalty.programs WHERE public_code=$1', [publicCode],
       ));
-      if (!program) deny('PROGRAM_UNAVAILABLE');
+      if (!discovered) deny('PROGRAM_UNAVAILABLE');
+      const locked = one(await client.query(
+        'SELECT stampies_identity.lock_enrollment_merchant($1) AS id', [discovered.merchant_id],
+      ));
+      if (!locked || locked.id !== discovered.merchant_id) deny('PROGRAM_UNAVAILABLE');
+      const program = await lockProgram(client, locked.id, discovered.id);
+      // public_code may have changed while waiting: do not bind an obsolete URL.
+      const sameCode = one(await client.query(
+        'SELECT id FROM stampies_loyalty.programs WHERE id=$1 AND merchant_id=$2 AND public_code=$3',
+        [program.id, locked.id, publicCode],
+      ));
+      if (!sameCode) deny('PROGRAM_UNAVAILABLE');
+      // DELETE obtains the grant lock first. Expiry is evaluated AFTER any wait;
+      // expired grants are restored by transaction rollback, not consumed.
       const grant = one(await client.query(
-        'DELETE FROM stampies_loyalty.enrollment_grants WHERE digest=$1 AND merchant_id=$2 AND program_id=$3 AND expires_at > $4 RETURNING digest',
-        [digest(enrollmentToken), program.merchant_id, program.id, nowDate(now).toISOString()],
+        'DELETE FROM stampies_loyalty.enrollment_grants WHERE digest=$1 AND merchant_id=$2 AND program_id=$3 RETURNING expires_at',
+        [digest(enrollmentToken), locked.id, program.id],
       ));
-      if (!grant) deny('ENROLLMENT_EXPIRED');
+      const at = nowDate(now);
+      if (!grant || !(new Date(grant.expires_at).getTime() > at.getTime())) deny('ENROLLMENT_EXPIRED');
       const passId = 'stp_' + randomUUID().replaceAll('-', '');
       const member = one(await client.query(
         'INSERT INTO stampies_loyalty.memberships(merchant_id,program_id,pass_id) VALUES($1,$2,$3) RETURNING id,pass_id,balance',
-        [program.merchant_id, program.id, passId],
+        [locked.id, program.id, passId],
       ));
       return {membershipId: member.id, passId: member.pass_id, balance: member.balance};
     });
@@ -194,28 +207,29 @@ export function createPostgresLoyaltyLedger({
   async function transactReward({
     kind, accessToken, businessId, membershipId, locationId, idempotencyKey,
   }) {
-    const actor = await authorize(accessToken, businessId, writerRoles);
+    const actor = await identity(accessToken, businessId);
     if (!validId(membershipId) || !validId(locationId) ||
         typeof idempotencyKey !== 'string' || !requestPattern.test(idempotencyKey)) {
       deny('INVALID_TRANSACTION');
     }
-    const at = nowDate(now);
     const hash = requestDigest({kind, businessId, membershipId, locationId, actor});
     return transaction(async (client) => {
-      const merchantId = await merchant(client, businessId);
-      // A row lock serialises *all* stamp and redeem requests for one card.
-      // A second concurrent request sees the committed first transaction.
-      const source = one(await client.query(
-        [
-          'SELECT m.id,m.balance,m.status AS member_status,',
-          'p.target,p.daily_limit,p.cooldown_seconds,p.time_zone,p.status AS program_status',
-          'FROM stampies_loyalty.memberships m',
-          'JOIN stampies_loyalty.programs p ON p.id=m.program_id AND p.merchant_id=m.merchant_id',
-          'WHERE m.id=$1 AND m.merchant_id=$2 FOR UPDATE OF m',
-        ].join(' '), [membershipId, merchantId],
+      const merchantId = await authority(client, actor, businessId, kind);
+      const programId = await discoverProgram(client, merchantId, membershipId);
+      const program = await lockProgram(client, merchantId, programId);
+      const place = one(await client.query(
+        'SELECT id,status FROM stampies_loyalty.locations WHERE merchant_id=$1 AND id=$2 FOR SHARE',
+        [merchantId, locationId],
       ));
-      if (!source || source.member_status !== 'active' ||
-          source.program_status !== 'active') deny('PASS_UNAVAILABLE');
+      if (!place || place.status !== 'active') deny('LOCATION_UNAVAILABLE');
+      const card = one(await client.query(
+        'SELECT id,program_id,balance,status FROM stampies_loyalty.memberships WHERE merchant_id=$1 AND id=$2 FOR UPDATE',
+        [merchantId, membershipId],
+      ));
+      if (!card || card.status !== 'active' || card.program_id !== programId) deny('PASS_UNAVAILABLE');
+      const source = {...program, balance: card.balance};
+      // Clock is sampled only after ALL blocking lifecycle/balance locks.
+      const at = nowDate(now);
       const previous = Number(source.balance);
       if (!Number.isSafeInteger(previous) || previous < 0 ||
           previous > Number(source.target)) deny('INVALID_BALANCE');
@@ -229,12 +243,6 @@ export function createPostgresLoyaltyLedger({
         }
         return {duplicate: true, balance: Number(existing.next_balance), kind};
       }
-      const place = one(await client.query(
-        'SELECT id FROM stampies_loyalty.locations WHERE id=$1 AND merchant_id=$2 AND status=$3',
-        [locationId, merchantId, 'active'],
-      ));
-      if (!place) deny('LOCATION_UNAVAILABLE');
-
       const day = localDay(at, source.time_zone);
       let next;
       if (kind === 'stamp') {
@@ -290,19 +298,21 @@ export function createPostgresLoyaltyLedger({
   const redeemReward = (args) => transactReward({...args, kind: 'redeem'});
 
   async function getMerchantPass({accessToken, businessId, membershipId}) {
-    await authorize(accessToken, businessId, writerRoles);
+    const actor = await identity(accessToken, businessId);
     if (!validId(membershipId)) deny('INVALID_PASS');
     return transaction(async (client) => {
-      const merchantId = await merchant(client, businessId);
-      const row = one(await client.query(
-        [
-          'SELECT m.id,m.pass_id,m.balance,m.lifetime_stamps,m.rewards_redeemed,',
-          'm.status,p.target,p.reward_text,p.time_zone',
-          'FROM stampies_loyalty.memberships m',
-          'JOIN stampies_loyalty.programs p ON p.id=m.program_id',
-          'WHERE m.id=$1 AND m.merchant_id=$2',
-        ].join(' '), [membershipId, merchantId],
+      const merchantId = await authority(client, actor, businessId, 'read_pass');
+      const programId = await discoverProgram(client, merchantId, membershipId);
+      const program = await lockProgram(client, merchantId, programId);
+      const card = one(await client.query(
+        'SELECT id,program_id,pass_id,balance,lifetime_stamps,rewards_redeemed,status FROM stampies_loyalty.memberships WHERE merchant_id=$1 AND id=$2 FOR SHARE',
+        [merchantId, membershipId],
       ));
+      const row = card?.status === 'active' && card.program_id === programId ? {
+        id: card.id, pass_id: card.pass_id, balance: card.balance,
+        lifetime_stamps: card.lifetime_stamps, rewards_redeemed: card.rewards_redeemed,
+        status: card.status, target: program.target, reward_text: program.reward_text, time_zone: program.time_zone,
+      } : null;
       if (!row) deny('PASS_UNAVAILABLE');
       return row;
     });

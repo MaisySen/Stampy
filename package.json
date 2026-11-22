@@ -16,6 +16,7 @@
     "@types/react": "~19.1.0",
     "@types/react-native": "^0.73.0",
     "expo-dev-client": "5.2.4",
+    "pg": "8.23.1",
     "typescript": "~5.8.3"
   },
   "main": "node_modules/expo/AppEntry.js",

@@ -16,6 +16,7 @@ Migration order on a test/staging database:
 1. server/auth/postgres/001-merchant-identities.sql (from PR #5)
 2. server/loyalty/postgres/001-loyalty-ledger.sql
 3. server/loyalty/postgres/provision-loyalty-runtime.sql
+4. server/loyalty/postgres/002-transactional-authority.sql
 
 The migration creates zero merchants, programs, customers, balances, staff PINs
 or fake events. Use a dedicated restricted Postgres service principal
@@ -30,16 +31,12 @@ through a separate privileged onboarding service.
 ~~~js
 import {createPostgresLoyaltyLedger} from './server/loyalty/postgres/ledger.mjs';
 import {createOidcAccessTokenVerifier} from './server/auth/oidc-jwt.mjs';
-import {createPostgresMerchantMembershipStore} from './server/auth/postgres/membership-store.mjs';
 
 const verifyAccessToken = createOidcAccessTokenVerifier({
   issuer: configuredIssuer, audience: apiAudience, jwksUri: configuredJwksUri,
 });
-const {lookupMembership} = createPostgresMerchantMembershipStore({
-  pool: restrictedIdentityPool,
-});
 const loyalty = createPostgresLoyaltyLedger({
-  pool: restrictedLoyaltyPool, verifyAccessToken, lookupMembership,
+  pool: restrictedLoyaltyPool, verifyAccessToken,
 });
 ~~~
 
@@ -69,6 +66,10 @@ replace the verification callback with JWT decoding or an allow-all stub.
 - getMerchantPass: authenticated merchant-scoped read of balances and
   aggregate redemption counters, never a hardcoded demo number.
 
+Permission and lifecycle locks now stay on the same transaction/client through
+commit, including the merchant pass read. See [transactional authority](TRANSACTIONAL_AUTHORITY.md)
+for lock order, role privileges, replay semantics and the separate test suite.
+
 Every event records the actor identity, merchant, branch, pass, local day,
 request digest, previous/next balance and server timestamp. The database
 uses composite foreign keys for tenant isolation. Repeated requests return
@@ -96,9 +97,9 @@ trusted to grant a stamp. Event IDs are server-generated.
   real merchant/customer API, pending/error states and server-confirmed
   results. Never show "Added to Wallet", "Stamp earned" or "Reward redeemed"
   without the corresponding verified result.
-- Extend real-Postgres coverage beyond migration/grant validation and rollback
-  to actual concurrent JS-adapter transactions, clock/DST transitions,
-  request replay and crash recovery.
+- Retain and expand the new restricted-runtime JS-adapter transaction tests.
+  Crash recovery, load, complete DST transition coverage and released behavior
+  remain unverified. See TRANSACTIONAL_AUTHORITY.md for the exact tested boundary.
 - Add merchant billing, role-scoped dashboards, consent-driven campaigns,
   customer privacy controls, reporting, multi-location administration,
   fraud monitoring, backups and operational tools.
@@ -142,5 +143,6 @@ database or a physical phone. The separate migration/grant regression above
 uses real disposable PostgreSQL. Do not merge without passing CI and independent
 review.
 
-**Status: migration repair verified locally; CI and wider integration remain
-release gates. No production data touched.**
+**Status: local SQL and restricted-runtime adapter tests have run on PostgreSQL14.24.
+Independent review, CI on the exact new source, connected API/Wallet integration
+and production certification remain gates. No production data touched.**
