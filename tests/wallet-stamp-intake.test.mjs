@@ -19,6 +19,7 @@ const ownerId = 'fixture_owner_opaque_value_001';
 const nowMs = 1790000000000;
 const minute = 60 * 1000;
 const day = 24 * 60 * minute;
+const stampAuth = 'Bearer test-staff-authority';
 
 const pgSocket = process.env.WALLET_FIXTURE_PG_SOCKET;
 const hasPgSocket = typeof pgSocket === 'string' && /^\/dev\/shm\/stampies-pg-proof\.[A-Za-z0-9]+\/socket$/.test(pgSocket);
@@ -27,10 +28,10 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const stampBody = (overrides = {}) => ({
   stampId: 'r-1790000000000-a', passId, businessId, createdAtMs: nowMs, ...overrides,
 });
-const postStamp = (service, url, body, contentType = 'application/json') =>
+const postStamp = (service, url, body, contentType = 'application/json', authorization = stampAuth) =>
   service.handle(new Request(url, {
     method: 'POST',
-    headers: { 'Content-Type': contentType },
+    headers: { 'Content-Type': contentType, ...(authorization ? { Authorization: authorization } : {}) },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   }));
 const reply = async (response) => ({ status: response.status, json: await response.json().catch(() => undefined) });
@@ -73,7 +74,7 @@ async function checkIntakeBehavior({ service, setLedger, url, prefix }) {
   assert.deepEqual(r, { status: 200, json: { recorded: true, duplicate: false, stamps: 1 } });
 }
 
-function sqliteFixture(t, url = origin) {
+function sqliteFixture(t, url = origin, authorised = true) {
   const dir = mkdtempSync(join(tmpdir(), 'wallet-stamp-intake-'));
   t.after(() => rmSync(dir, { force: true, recursive: true }));
   let at = nowMs;
@@ -81,6 +82,7 @@ function sqliteFixture(t, url = origin) {
   const ledger = new Map([[passId, { version: 1, record: { passId, businessId, stamps: 3 } }]]);
   const service = openWalletService({
     origin: url, tokenDbPath: join(dir, 'tokens.db'), now: () => at,
+    ...(authorised ? { authorizeStamp: ({request}) => request.headers.get('Authorization') === stampAuth } : {}),
     lookupOwnedPass: async (o) => (o.ownerId === ownerId && ledger.has(o.passId) ? ledger.get(o.passId) : null),
     apple: {
       rootKey: Buffer.alloc(32, 17), updateDbPath: join(dir, 'updates.db'),
@@ -102,6 +104,21 @@ test('stamp intake records exactly once on SQLite', async (t) => {
   await checkIntakeBehavior({
     service: f.service, setLedger: f.setLedger, url: origin + '/wallet/stamps', prefix: 'r-1790000000000',
   });
+});
+
+test('stamp intake rejects unauthorised callers before recording any stamp', async (t) => {
+  const f = sqliteFixture(t);
+  const endpoint = origin + '/wallet/stamps';
+  const stamp = stampBody({stampId: 'r-1790000000000-denied'});
+  assert.equal((await postStamp(f.service, endpoint, stamp, 'application/json', null)).status, 403);
+  assert.equal((await postStamp(f.service, endpoint, stamp, 'application/json', 'Bearer wrong')).status, 403);
+  assert.deepEqual(await reply(await postStamp(f.service, endpoint, stamp)),
+    {status: 200, json: {recorded: true, duplicate: false, stamps: 1}});
+});
+
+test('stamp intake is unavailable until the host provides an authorizer', async (t) => {
+  const f = sqliteFixture(t, origin, false);
+  assert.equal((await postStamp(f.service, origin + '/wallet/stamps', stampBody())).status, 503);
 });
 
 test('recording a stamp queues the pass update through committedAppleChange', async (t) => {
@@ -148,7 +165,7 @@ test('stamp intake through the HTTP adapter keeps the ingress protections', asyn
     req.end(body);
   });
   try {
-    const ok = await call('/wallet/stamps', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(stampBody({ stampId: 'r-1790000000000-h' })) });
+    const ok = await call('/wallet/stamps', { method: 'POST', headers: { 'content-type': 'application/json', authorization: stampAuth }, body: JSON.stringify(stampBody({ stampId: 'r-1790000000000-h' })) });
     assert.equal(ok.status, 200);
     assert.deepEqual(JSON.parse(ok.body), { recorded: true, duplicate: false, stamps: 1 });
     assert.equal((await call('/wallet/stamps', { method: 'GET' })).status, 405);
@@ -200,6 +217,7 @@ test('stamp intake records exactly once on Postgres', { skip: !hasPgSocket }, as
   const ledger = new Map([[passId, { version: 1, record: { passId, businessId, stamps: 3 } }]]);
   const service = await openPostgresWalletService({
     pool: runtime, origin: pgOrigin, now: () => at,
+    authorizeStamp: ({request}) => request.headers.get('Authorization') === stampAuth,
     lookupOwnedPass: async (o) => (o.ownerId === ownerId && ledger.has(o.passId) ? ledger.get(o.passId) : null),
     apple: {
       rootKey: Buffer.alloc(32, 23),
