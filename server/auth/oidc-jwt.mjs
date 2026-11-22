@@ -3,6 +3,8 @@
 // Supports RS256 access tokens with issuer-pinned HTTPS JWKS and short TTLs.
 // Instantiate once per server; never call this from the Expo client.
 import { createPublicKey, verify as verifySignature } from 'node:crypto';
+import {performance} from 'node:perf_hooks';
+import {readBoundedStream} from '../api/bounded-stream.mjs';
 
 const jwtPattern = /^[A-Za-z0-9_-]{1,2048}\.[A-Za-z0-9_-]{1,8192}\.[A-Za-z0-9_-]{1,2048}$/;
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -32,14 +34,15 @@ function validClaims(claims, {issuer, audience, clock, skew, maxAge}) {
 export function createOidcAccessTokenVerifier({
   issuer, audience, jwksUri, fetchImpl = globalThis.fetch,
   clock = Date.now, clockSkewSeconds = 30,
-  maxTokenAgeSeconds = 3600, cacheSeconds = 300,
+  maxTokenAgeSeconds = 3600, cacheSeconds = 300, jwksTimeoutMs = 5000,
 } = {}) {
   if (typeof issuer !== 'string' || typeof audience !== 'string' ||
       !audience.trim() || typeof jwksUri !== 'string' ||
       typeof fetchImpl !== 'function' || typeof clock !== 'function' ||
       !Number.isInteger(clockSkewSeconds) || clockSkewSeconds < 0 || clockSkewSeconds > 60 ||
       !Number.isInteger(maxTokenAgeSeconds) || maxTokenAgeSeconds < 60 || maxTokenAgeSeconds > 3600 ||
-      !Number.isInteger(cacheSeconds) || cacheSeconds < 1 || cacheSeconds > 300) {
+      !Number.isInteger(cacheSeconds) || cacheSeconds < 1 || cacheSeconds > 300 ||
+      !Number.isInteger(jwksTimeoutMs) || jwksTimeoutMs < 1 || jwksTimeoutMs > 5000) {
     throw new Error('Invalid OIDC verifier configuration.');
   }
   let issuerUrl, jwksUrl;
@@ -64,22 +67,38 @@ export function createOidcAccessTokenVerifier({
     // JWKS traffic. Fail closed on unavailable or malformed trusted metadata.
     if (inflight) return inflight;
     inflight = (async () => {
-      const response = await fetchImpl(jwksUrl.toString(), {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!response || response.ok !== true || typeof response.text !== 'function') {
-        throw new Error('Trusted JWKS unavailable.');
-      }
-      const body = await response.text();
-      if (body.length > 65536) throw new Error('JWKS too large.');
-      const parsed = JSON.parse(body);
+      const deadline=performance.now()+jwksTimeoutMs;
+      const checkpoint=()=>{if(performance.now()>=deadline)throw new Error('Trusted JWKS deadline');};
+      const controller=new AbortController();
+      let timer;
+      const failure=new Promise((_,bad)=>{timer=setTimeout(()=>{
+        controller.abort();bad(new Error('Trusted JWKS deadline'));
+      },jwksTimeoutMs);});failure.catch(()=>{});
+      let body,response;
+      try {
+        // Explicitly refuse redirects, including redirects within the issuer's
+        // origin. A pinned URL cannot silently turn into another endpoint.
+        const fetched=Promise.resolve().then(()=>fetchImpl(jwksUrl.toString(),{
+          headers:{Accept:'application/json'},redirect:'error',signal:controller.signal,
+        }));
+        fetched.then(late=>{if(controller.signal.aborted){try{late?.body?.cancel().catch(()=>{});}catch{}}},()=>{});
+        response=await Promise.race([fetched,failure]);checkpoint();
+        if(!(response instanceof Response)||!response.ok||response.redirected||
+            (response.url&&response.url!==jwksUrl.toString())||!response.body)throw new Error('Trusted JWKS unavailable');
+        const declared=response.headers.get('content-length');
+        if(declared!==null&&(!/^(?:0|[1-9][0-9]*)$/.test(declared)||Number(declared)>65536))throw new Error('JWKS too large');
+        const image=await Promise.race([readBoundedStream(response.body,{
+          maxBytes:65536,timeoutMs:Math.max(1,Math.floor(deadline-performance.now())),signal:controller.signal,
+        }),failure]);
+        checkpoint();body=new TextDecoder('utf-8',{fatal:true}).decode(image);
+      } finally {clearTimeout(timer);controller.abort();try{response?.body?.cancel().catch(()=>{});}catch{}}
+      const parsed = JSON.parse(body);checkpoint();
       if (!isObject(parsed) || !Array.isArray(parsed.keys) || parsed.keys.length > 50) {
         throw new Error('Invalid trusted JWKS.');
       }
       const refreshed = new Map();
       for (const jwk of parsed.keys) {
-        if (!isObject(jwk) || jwk.kty !== 'RSA' || typeof jwk.kid !== 'string' ||
+        if (!isObject(jwk) || typeof jwk.n!=='string'||jwk.n.length>1400||typeof jwk.e!=='string'||jwk.e.length>8||jwk.kty !== 'RSA' || typeof jwk.kid !== 'string' ||
             jwk.kid.length < 1 || jwk.kid.length > 200 ||
             (jwk.use !== undefined && jwk.use !== 'sig') ||
             (jwk.alg !== undefined && jwk.alg !== 'RS256')) continue;
@@ -89,14 +108,15 @@ export function createOidcAccessTokenVerifier({
         try {
           const key = createPublicKey({key: jwk, format: 'jwk'});
           if (key.asymmetricKeyType !== 'rsa' ||
-              (key.asymmetricKeyDetails?.modulusLength ?? 0) < 2048) continue;
+              (key.asymmetricKeyDetails?.modulusLength ?? 0) < 2048 ||
+              (key.asymmetricKeyDetails?.modulusLength ?? 0) > 8192) continue;
           refreshed.set(jwk.kid, key);
         } catch {
           // Invalid keys never become trusted.
         }
       }
       if (refreshed.size === 0) throw new Error('No valid JWKS signing keys.');
-      keys = refreshed;
+      checkpoint();keys = refreshed;
       cachedUntil = clock() + cacheSeconds * 1000;
     })();
     try { await inflight; } finally { inflight = null; }

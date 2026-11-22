@@ -3,6 +3,7 @@ name: Stampies Loyalty Ledger
 on:
   pull_request:
     paths:
+      - 'server/api/**'
       - 'server/loyalty/**'
       - 'server/auth/**'
       - 'server/wallet/postgres/**'
