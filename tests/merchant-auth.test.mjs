@@ -82,6 +82,19 @@ test('OIDC verifier refreshes for rotated key IDs, and fails closed on missing J
   assert.equal(await f.verifyAccessToken(token(defaultClaims(), {kid: 'unknown'})), null);
 });
 
+test('OIDC verifier rejects duplicate JWKS key IDs and unusable JWKS bodies', async () => {
+  const duplicate = createOidcAccessTokenVerifier({
+    issuer, audience, jwksUri, clock: now,
+    fetchImpl: async () => ({ok: true, text: async () => JSON.stringify({keys: [publicJwk, publicJwk]})}),
+  });
+  assert.equal(await duplicate(token()), null);
+  const malformed = createOidcAccessTokenVerifier({
+    issuer, audience, jwksUri, clock: now,
+    fetchImpl: async () => ({ok: true, text: async () => '{not-valid-json'}),
+  });
+  assert.equal(await malformed(token()), null);
+});
+
 test('OIDC verifier rejects unsafe issuer / JWKS configuration and untrusted fetch failure', async () => {
   assert.throws(() => createOidcAccessTokenVerifier({
     issuer, audience, jwksUri: 'https://evil.example/jwks',
