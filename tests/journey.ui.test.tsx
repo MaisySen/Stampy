@@ -50,7 +50,7 @@ const { createPersistentOfflineQueueStore, OFFLINE_QUEUE_STORAGE_KEY } =
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { PROGRAM_STORAGE_KEY } = require("../src/lib/program") as typeof import("../src/lib/program");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { LEDGER_STORAGE_KEY, emptyLedger } = require("../src/lib/ledger") as typeof import("../src/lib/ledger");
+const { LEDGER_STORAGE_KEY, destinationForCard, emptyLedger } = require("../src/lib/ledger") as typeof import("../src/lib/ledger");
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const { act } = TestRenderer;
@@ -557,6 +557,110 @@ test("legal pages no longer state live Wallet, location or 9 stamp claims", asyn
     text = screenText(r);
     assert.match(text, /8 paid visits, then the next visit is the free reward visit/);
     assert.doesNotMatch(text, /9 stamps/);
+  } finally {
+    r.unmount();
+  }
+});
+
+function queuedRecords(queueBackend: InstanceType<typeof MemoryBackend>) {
+  const raw = queueBackend.data.get(OFFLINE_QUEUE_STORAGE_KEY);
+  return raw === undefined
+    ? []
+    : (JSON.parse(raw) as Array<{ id: string; passId: string; businessId: string }>);
+}
+
+async function stampWhileQueueNotReady(h: Harness) {
+  const r = await h.mount({
+    queueStore: async () => {
+      throw new Error("Queue storage unavailable.");
+    },
+  });
+  try {
+    await stampOnce(r);
+  } finally {
+    r.unmount();
+  }
+}
+
+function renameProgram(h: Harness, name: string) {
+  const saved = JSON.parse(h.backend.data.get(PROGRAM_STORAGE_KEY) ?? "null");
+  h.backend.data.set(
+    PROGRAM_STORAGE_KEY,
+    JSON.stringify({ v: 1, settings: { ...saved.settings, name } }),
+  );
+}
+
+test("a visit stamped while the queue was not ready keeps its program after a rename and restart", async () => {
+  const h = harness();
+  seedProgram(h.backend, 8);
+  await stampWhileQueueNotReady(h);
+  const before = savedLedger(h.backend);
+  assert.equal(before.outbox.length, 1);
+  renameProgram(h, "Synthetic Renamed Cafe");
+  const r = await h.mount();
+  try {
+    await settle();
+    assert.match(screenText(r), /Synthetic Renamed Cafe/);
+    const records = queuedRecords(h.queueBackend);
+    assert.equal(records.length, 1);
+    const want = destinationForCard(before.epoch);
+    assert.equal(records[0].businessId, want.businessId);
+    assert.equal(records[0].passId, want.passId);
+    assert.doesNotMatch(records[0].businessId, /renamed|tea/i);
+    assert.equal(savedLedger(h.backend).outbox.length, 0);
+  } finally {
+    r.unmount();
+  }
+});
+
+test("a valid non-Latin program name queues a readable record that survives restart", async () => {
+  const h = harness();
+  h.backend.data.set(
+    PROGRAM_STORAGE_KEY,
+    JSON.stringify({ v: 1, settings: { name: "\u8336\u5C4B \u2615", reward: "Free tea", paidVisits: 8 } }),
+  );
+  const r = await h.mount();
+  try {
+    await stampOnce(r);
+    await settle();
+  } finally {
+    r.unmount();
+  }
+  const records = queuedRecords(h.queueBackend);
+  assert.equal(records.length, 1);
+  assert.ok(records[0].businessId.length > 0 && records[0].passId.length > 0);
+  const r2 = await h.mount();
+  try {
+    assert.doesNotMatch(screenText(r2), /cannot read/);
+    assert.equal(queuedRecords(h.queueBackend).length, 1);
+    await stampOnce(r2);
+    await settle();
+    assert.equal(queuedRecords(h.queueBackend).length, 1, "cooldown still applies, queue unchanged");
+  } finally {
+    r2.unmount();
+  }
+});
+
+test("a stamp saved by an older version without a program is kept, shown, and never given a guessed one", async () => {
+  const h = harness();
+  seedProgram(h.backend, 8);
+  h.backend.data.set(
+    LEDGER_STORAGE_KEY,
+    JSON.stringify({
+      ...emptyLedger(),
+      progress: 1,
+      nextSeq: 2,
+      outbox: [{ id: "stamp-e0-1", createdAtMs: 1 }],
+      appliedIds: ["stamp-e0-1"],
+    }),
+  );
+  const r = await h.mount();
+  try {
+    await settle();
+    assert.match(screenText(r), /no recorded program/);
+    assert.deepEqual(queuedIds(h.queueBackend), []);
+    assert.equal(savedLedger(h.backend).outbox.length, 1);
+    assert.equal(savedLedger(h.backend).outbox[0].destination, undefined);
   } finally {
     r.unmount();
   }

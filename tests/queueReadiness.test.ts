@@ -9,6 +9,7 @@ import {
 } from "../src/lib/offlineQueueStore.js";
 import {
   StampQueueController,
+  handOutboxByDestination,
   handOutboxToQueue,
 } from "../src/lib/offlineQueueStartup.js";
 import type { QueueState } from "../src/lib/offlineQueueStartup.js";
@@ -246,4 +247,16 @@ test("a saved queue with a record this version cannot read is kept unchanged and
   await controller.retry();
   assert.equal(now(controller).phase, "memory-only");
   assert.equal(backend.data.get(OFFLINE_QUEUE_STORAGE_KEY), saved);
+});
+
+test("handOutboxByDestination uses each stamp's saved destination and never guesses for a legacy one", () => {
+  const queue = new OfflineStampQueue(null);
+  const out = handOutboxByDestination(queue, [
+    { id: "a", createdAtMs: 1, destination: { passId: "p-old", businessId: "b-old" } },
+    { id: "b", createdAtMs: 2, destination: { passId: "p-new", businessId: "b-new" } },
+    { id: "legacy", createdAtMs: 3 },
+  ]);
+  assert.deepEqual(out, { handed: ["a", "b"], conflicts: [], unrouted: ["legacy"] });
+  const held = queue.pending();
+  assert.deepEqual(held.map((x) => [x.id, x.passId, x.businessId]), [["a", "p-old", "b-old"], ["b", "p-new", "b-new"]]);
 });

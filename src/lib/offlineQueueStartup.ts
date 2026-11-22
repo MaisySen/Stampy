@@ -208,3 +208,41 @@ export function handOutboxToQueue(
   }
   return { handed, conflicts };
 }
+
+/**
+ * Hand over each outbox stamp to the destination saved with it. A stamp with
+ * no saved destination (written by an older version) is never given one by
+ * guessing; it is returned as unrouted and stays in the outbox.
+ */
+export function handOutboxByDestination(
+  queue: OfflineStampQueue,
+  outbox: ReadonlyArray<{
+    id: string;
+    createdAtMs: number;
+    destination?: { passId: string; businessId: string };
+  }>,
+): { handed: string[]; conflicts: string[]; unrouted: string[] } {
+  const handed: string[] = [];
+  const conflicts: string[] = [];
+  const unrouted: string[] = [];
+  const groups = new Map<string, { passId: string; businessId: string; items: { id: string; createdAtMs: number }[] }>();
+  for (const stamp of outbox) {
+    if (stamp.destination === undefined) {
+      unrouted.push(stamp.id);
+      continue;
+    }
+    const key = `${stamp.destination.passId}\u0000${stamp.destination.businessId}`;
+    let g = groups.get(key);
+    if (g === undefined) {
+      g = { ...stamp.destination, items: [] };
+      groups.set(key, g);
+    }
+    g.items.push({ id: stamp.id, createdAtMs: stamp.createdAtMs });
+  }
+  for (const g of groups.values()) {
+    const r = handOutboxToQueue(queue, g.items, g.passId, g.businessId);
+    handed.push(...r.handed);
+    conflicts.push(...r.conflicts);
+  }
+  return { handed, conflicts, unrouted };
+}

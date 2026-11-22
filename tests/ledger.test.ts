@@ -7,6 +7,7 @@ import {
   LedgerPersister,
   applyStamp,
   cardStatus,
+  destinationForCard,
   emptyLedger,
   loadLedger,
   markHandedToQueue,
@@ -218,4 +219,38 @@ test("epoch and redemption sequence survive save and load, and an older save loa
   const legacy = await loadLedger(backend);
   assert.equal(legacy.status, "ok");
   assert.equal(legacy.state.epoch, "legacy");
+});
+
+test("a stamp keeps the destination of its card, whatever the program is later called", async () => {
+  const a: ProgramSettings = { ...DEFAULT_PROGRAM, name: "Old Cafe" };
+  const b: ProgramSettings = { ...DEFAULT_PROGRAM, name: "\u8336\u5C4B" };
+  const first = applyStamp(emptyLedger(), a, 1000);
+  assert.equal(first.outcome, "stamped");
+  if (first.outcome !== "stamped") return;
+  const second = applyStamp(first.state, b, 2000 + 86_400_000);
+  assert.equal(second.outcome, "stamped");
+  if (second.outcome !== "stamped") return;
+  const want = destinationForCard(second.state.epoch);
+  assert.deepEqual(second.state.outbox.map((s) => s.destination), [want, want]);
+  assert.ok(want.passId.length > 0 && want.businessId.length > 0);
+  assert.notDeepEqual(destinationForCard("e1"), destinationForCard("e2"));
+});
+
+test("destination survives save and load; a legacy entry stays without one; a bad one is unreadable", async () => {
+  const backend = new MemoryBackend();
+  const s = applyStamp(emptyLedger(), DEFAULT_PROGRAM, 1000);
+  assert.equal(s.outcome, "stamped");
+  if (s.outcome !== "stamped") return;
+  const withLegacy = { ...s.state, outbox: [...s.state.outbox, { id: "old", createdAtMs: 5 }] };
+  backend.data.set(LEDGER_STORAGE_KEY, JSON.stringify(withLegacy));
+  const loaded = await loadLedger(backend);
+  assert.equal(loaded.status, "ok");
+  if (loaded.status !== "ok") return;
+  assert.deepEqual(loaded.state.outbox[0].destination, destinationForCard(s.state.epoch));
+  assert.equal(loaded.state.outbox[1].destination, undefined);
+  backend.data.set(
+    LEDGER_STORAGE_KEY,
+    JSON.stringify({ ...s.state, outbox: [{ id: "x", createdAtMs: 1, destination: { passId: "", businessId: "b" } }] }),
+  );
+  assert.equal((await loadLedger(backend)).status, "invalid");
 });

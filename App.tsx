@@ -11,9 +11,9 @@ import {
 } from "./src/data";
 import type { BusinessState, Customer, StampMethod } from "./src/data";
 import { dayString } from "./src/lib/fraud";
-import { businessSlug, passShareLink } from "./src/lib/pass";
+import { passShareLink } from "./src/lib/pass";
 import { createAsyncStorageQueueStore } from "./src/lib/offlineQueueStore";
-import { StampQueueController, handOutboxToQueue } from "./src/lib/offlineQueueStartup";
+import { StampQueueController, handOutboxByDestination } from "./src/lib/offlineQueueStartup";
 import type { OfflineQueueStoreFactory, QueueState } from "./src/lib/offlineQueueStartup";
 import { DEFAULT_PROGRAM, loadProgram, saveProgram } from "./src/lib/program";
 import type { ProgramSettings } from "./src/lib/program";
@@ -69,6 +69,7 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
   const [saveProblem, setSaveProblem] = useState<string | null>(null);
   const [handoffProblem, setHandoffProblem] = useState<string | null>(null);
   const [queueConflicts, setQueueConflicts] = useState(0);
+  const [queueUnrouted, setQueueUnrouted] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [queueState, setQueueState] = useState<QueueState>({ phase: "starting" });
   const [business, setBusiness] = useState<BusinessState>(demoBusiness);
@@ -140,14 +141,9 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
           setHandoffProblem(null);
           break;
         }
-        const slug = businessSlug(programRef.current.name);
-        const { handed, conflicts } = handOutboxToQueue(
-          state.queue,
-          outbox,
-          `stampies-${slug}`,
-          slug,
-        );
+        const { handed, conflicts, unrouted } = handOutboxByDestination(state.queue, outbox);
         setQueueConflicts(conflicts.length);
+        setQueueUnrouted(unrouted.length);
         if (handed.length === 0) {
           continue;
         }
@@ -439,6 +435,13 @@ export default function App({ backend: backendProp, queueStoreFactory, createSen
       id: "queue-conflict",
       tone: "error",
       text: `${queueConflicts} stamp(s) were not handed to the sync queue because the queue already holds a different stamp with the same id. They stay saved here and nothing was removed.`,
+    });
+  }
+  if (queueUnrouted > 0) {
+    notices.push({
+      id: "queue-unrouted",
+      tone: "error",
+      text: `${queueUnrouted} stamp(s) saved by an older version have no recorded program, so they were not handed to the sync queue. They stay saved here and nothing was removed.`,
     });
   }
   if (ledger.outbox.length > 0 && queueState.phase === "durable") {

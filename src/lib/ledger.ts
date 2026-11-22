@@ -20,9 +20,22 @@ import type { ProgramSettings } from "./program";
 export const LEDGER_STORAGE_KEY = "stampies:demo-ledger:v1";
 const MAX_APPLIED_IDS = 500;
 
+/** Where a stamp is going. Fixed when the stamp is taken, never from the display name. */
+export interface StampDestination {
+  passId: string;
+  businessId: string;
+}
+
 export interface OutboxStamp {
   id: string;
   createdAtMs: number;
+  /** Missing only on stamps saved by an older version. Those are never routed by guessing. */
+  destination?: StampDestination;
+}
+
+/** Stable program identity for a card. It does not change when the program is renamed. */
+export function destinationForCard(epoch: string): StampDestination {
+  return { passId: `stampies-program-${epoch}`, businessId: `program-${epoch}` };
 }
 
 export interface Redemption {
@@ -116,7 +129,10 @@ export function applyStamp(
     ...state,
     progress: state.progress + 1,
     nextSeq: state.nextSeq + 1,
-    outbox: [...state.outbox, { id, createdAtMs: nowMs }],
+    outbox: [
+      ...state.outbox,
+      { id, createdAtMs: nowMs, destination: destinationForCard(state.epoch) },
+    ],
     lastStampAtMs: nowMs,
     appliedIds: [...state.appliedIds, id].slice(-MAX_APPLIED_IDS),
   };
@@ -190,7 +206,24 @@ function parseLedger(value: unknown): LedgerState | null {
     ) {
       return null;
     }
-    outbox.push({ id: s.id, createdAtMs: s.createdAtMs });
+    const d = (s as { destination?: unknown }).destination;
+    if (d === undefined) {
+      outbox.push({ id: s.id, createdAtMs: s.createdAtMs });
+      continue;
+    }
+    const dd = d as Partial<StampDestination> | null;
+    if (
+      typeof dd !== "object" || dd === null ||
+      typeof dd.passId !== "string" || dd.passId.length === 0 ||
+      typeof dd.businessId !== "string" || dd.businessId.length === 0
+    ) {
+      return null;
+    }
+    outbox.push({
+      id: s.id,
+      createdAtMs: s.createdAtMs,
+      destination: { passId: dd.passId, businessId: dd.businessId },
+    });
   }
   if (!raw.appliedIds.every((id) => typeof id === "string")) {
     return null;
