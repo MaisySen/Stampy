@@ -53,7 +53,7 @@ function fixture({target = 2, dailyLimit = 20, cooldownSeconds = 0,
             return {rows: [merchant]};
           }
           if (sql.startsWith('SELECT program_id FROM stampies_loyalty.memberships')) return {rows: [{program_id: programId}]};
-          if (sql.startsWith('SELECT id,status,target')) return {rows: [{id: programId,
+          if (sql.startsWith('SELECT * FROM stampies_loyalty.lock_program_lifecycle')) return {rows: [{id: programId,
             status: state.programStatus, target, daily_limit: dailyLimit,
             cooldown_seconds: cooldownSeconds, time_zone: timeZone, reward_text: 'Free item'}]};
           if (sql.startsWith('SELECT id,program_id,balance,status')) {
@@ -65,7 +65,7 @@ function fixture({target = 2, dailyLimit = 20, cooldownSeconds = 0,
             return {rows: event ? [{event_type: event.kind,
               request_digest: event.digest, next_balance: event.next}] : []};
           }
-          if (sql.startsWith('SELECT id,status FROM stampies_loyalty.locations')) {
+          if (sql.startsWith('SELECT * FROM stampies_loyalty.lock_location_lifecycle')) {
             return {rows: params[0] === merchantId ? [{id: params[1],status: 'active'}] : []};
           }
           if (sql.startsWith('SELECT COUNT(*)::int AS total FROM stampies_loyalty.events')) {

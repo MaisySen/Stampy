@@ -39,9 +39,37 @@ test('actual JS ledger adapter with restricted PostgreSQL login and deterministi
     run(executable('pg_ctl'),['-D',data,'-l',join(dir,'server.log'),'-o',`-h "" -k ${socket} -c max_connections=20 -c shared_buffers=16MB`,'-w','start']);started=true;
     const config={host:socket,port:5432,database:'postgres',max:8,connectionTimeoutMillis:3000,idleTimeoutMillis:1000,options:'-c statement_timeout=10000 -c lock_timeout=7000'};
     admin=new pg.Pool({...config,user:'stampy_test_migration'});
-    for(const path of ['server/auth/postgres/001-merchant-identities.sql','server/loyalty/postgres/001-loyalty-ledger.sql','server/loyalty/postgres/provision-loyalty-runtime.sql','server/loyalty/postgres/002-transactional-authority.sql']){
+    for(const path of ['server/auth/postgres/001-merchant-identities.sql','server/loyalty/postgres/001-loyalty-ledger.sql','server/loyalty/postgres/provision-loyalty-runtime.sql','server/auth/postgres/provision-auth-reader.sql','server/wallet/postgres/001-issue-grants.sql','server/wallet/postgres/002-apple-updates.sql','server/wallet/postgres/003-apple-wake-retries.sql','server/wallet/postgres/004-stamp-intake.sql','server/wallet/postgres/provision-runtime-role.sql']){
       await admin.query(readFileSync(new URL('../'+path,import.meta.url),'utf8'));
     }
+    const migration=readFileSync(new URL('../server/loyalty/postgres/002-transactional-authority.sql',import.meta.url),'utf8');
+    const helperCount=async()=>Number((await admin.query("SELECT count(*) AS n FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace ns ON ns.oid=p.pronamespace WHERE ns.nspname IN ('stampies_identity','stampies_loyalty')")).rows[0].n);
+    const roleCount=async()=>Number((await admin.query("SELECT count(*) AS n FROM pg_catalog.pg_roles WHERE rolname='stampies_permission_locker'")).rows[0].n);
+    await t.test('upgrade refuses ANY preexisting locker role with atomic rollback',async()=>{
+      await admin.query('CREATE ROLE stampies_permission_locker NOLOGIN NOINHERIT');
+      const c=await admin.connect();
+      try{await assert.rejects(()=>c.query(migration),/must be absent/);}finally{await c.query('ROLLBACK');c.release();}
+      assert.equal(await roleCount(),1);assert.equal(await helperCount(),0);
+      assert.equal((await admin.query("SELECT has_column_privilege('stampies_loyalty_runtime','stampies_loyalty.programs','id','UPDATE') AS allowed")).rows[0].allowed,false);
+      // Rejected role remains exactly external, with no newly acquired privileges.
+      assert.equal((await admin.query("SELECT has_column_privilege('stampies_permission_locker','stampies_identity.merchants','updated_at','UPDATE') AS allowed")).rows[0].allowed,false);
+      await admin.query('DROP ROLE stampies_permission_locker');
+    });
+    await t.test('unsafe default function ACL aborts all new objects and grants atomically',async()=>{
+      for(const {schema,audience,grantable} of [
+        {schema:'stampies_identity',audience:'stampies_auth_reader'},
+        {schema:'stampies_loyalty',audience:'stampies_wallet_runtime'},
+        {schema:'stampies_identity',audience:'stampies_loyalty_runtime',grantable:true},
+      ]){
+        await admin.query('ALTER DEFAULT PRIVILEGES IN SCHEMA '+schema+' GRANT EXECUTE ON FUNCTIONS TO '+audience+(grantable?' WITH GRANT OPTION':''));
+        const c=await admin.connect();
+        try{await assert.rejects(()=>c.query(migration),/Unexpected helper function ACL/);}finally{await c.query('ROLLBACK');c.release();}
+        assert.equal(await helperCount(),0);assert.equal(await roleCount(),0);
+        assert.equal((await admin.query("SELECT has_column_privilege('stampies_loyalty_runtime','stampies_loyalty.locations','id','UPDATE') AS allowed")).rows[0].allowed,false);
+        await admin.query('ALTER DEFAULT PRIVILEGES IN SCHEMA '+schema+' REVOKE EXECUTE ON FUNCTIONS FROM '+audience);
+      }
+    });
+    await admin.query(migration);
     await admin.query('CREATE ROLE stampy_js_runtime LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS; GRANT stampies_loyalty_runtime TO stampy_js_runtime');
     runtime=new pg.Pool({...config,user:'stampy_js_runtime'});
     const version=(await admin.query('SELECT version()')).rows[0].version;t.diagnostic(version);
@@ -88,18 +116,56 @@ test('actual JS ledger adapter with restricted PostgreSQL login and deterministi
       await seed();
       const who=(await runtime.query('SELECT current_user,session_user')).rows[0];
       assert.equal(who.current_user,'stampy_js_runtime');assert.equal(who.session_user,'stampy_js_runtime');
-      const f=(await admin.query("SELECT p.proname,r.rolname,p.prosecdef,p.proconfig FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_roles r ON r.oid=p.proowner JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='stampies_identity' ORDER BY p.proname")).rows;
-      assert.equal(f.length,2);
+      const f=(await admin.query("SELECT p.proname,r.rolname,p.prosecdef,p.proconfig FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_roles r ON r.oid=p.proowner JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('stampies_identity','stampies_loyalty') ORDER BY p.proname")).rows;
+      assert.equal(f.length,4);
       for(const x of f){assert.equal(x.rolname,'stampies_permission_locker');assert.equal(x.prosecdef,true);assert.deepEqual(x.proconfig,['search_path=pg_catalog, pg_temp']);}
       const permissions=(await admin.query("SELECT has_function_privilege('public','stampies_identity.lock_staff_authority(text,text,text,text)','EXECUTE') AS pub, has_schema_privilege('stampy_js_runtime','stampies_identity','CREATE') AS create, has_column_privilege('stampy_js_runtime','stampies_identity.merchant_memberships','status','UPDATE') AS mutate")).rows[0];
       assert.deepEqual(permissions,{pub:false,create:false,mutate:false});
-      for(const sql of ["UPDATE stampies_identity.merchant_memberships SET role='owner'", "DELETE FROM stampies_identity.merchant_memberships", "UPDATE stampies_identity.merchants SET updated_at=now()", "SET ROLE stampies_permission_locker", "ALTER FUNCTION stampies_identity.lock_staff_authority(text,text,text,text) SET search_path=public", "ALTER FUNCTION stampies_identity.lock_staff_authority(text,text,text,text) OWNER TO stampy_js_runtime", "CREATE TABLE stampies_identity.forbidden(id int)"]){
+      for(const sql of ["UPDATE stampies_identity.merchant_memberships SET role='owner'", "DELETE FROM stampies_identity.merchant_memberships", "UPDATE stampies_identity.merchants SET updated_at=now()", "UPDATE stampies_loyalty.programs SET id=id", "UPDATE stampies_loyalty.locations SET id=id", "SET ROLE stampies_permission_locker", "ALTER FUNCTION stampies_identity.lock_staff_authority(text,text,text,text) SET search_path=public", "ALTER FUNCTION stampies_identity.lock_staff_authority(text,text,text,text) OWNER TO stampy_js_runtime", "CREATE TABLE stampies_identity.forbidden(id int)"]){
         await denied(()=>runtime.query(sql),'42501');
       }
       await denied(()=>runtime.query('SELECT stampies_identity.lock_staff_authority($1,$2,$3,NULL)',['test-merchant',issuer,'staff-1']),'42501');
       await runtime.query('CREATE TEMP TABLE merchants(id uuid,status text)');
       // Explicitly qualified relations cannot be shadowed by temp names.
       assert.equal((await ledger.issueStamp(args())).balance,1);
+    });
+
+    await t.test('Wallet, identity-reader and PUBLIC audiences cannot execute any helper',async()=>{
+      const helpers=[
+        {signature:'stampies_identity.lock_staff_authority(text,text,text,text)',sql:'SELECT stampies_identity.lock_staff_authority($1,$2,$3,$4)',params:['test-merchant',issuer,'staff-1','stamp']},
+        {signature:'stampies_identity.lock_enrollment_merchant(uuid)',sql:'SELECT stampies_identity.lock_enrollment_merchant($1)',params:[M]},
+        {signature:'stampies_loyalty.lock_program_lifecycle(uuid,uuid)',sql:'SELECT * FROM stampies_loyalty.lock_program_lifecycle($1,$2)',params:[M,P]},
+        {signature:'stampies_loyalty.lock_location_lifecycle(uuid,uuid)',sql:'SELECT * FROM stampies_loyalty.lock_location_lifecycle($1,$2)',params:[M,L]},
+      ];
+      for(const [user,role] of [['stampy_wallet_login','stampies_wallet_runtime'],['stampy_auth_login','stampies_auth_reader'],['stampy_public_login',null]]){
+        await admin.query('CREATE ROLE '+user+' LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS');
+        if(role)await admin.query('GRANT '+role+' TO '+user);
+        const c=new pg.Client({...config,user});await c.connect();
+        try{
+          for(const helper of helpers){
+            assert.equal((await admin.query("SELECT has_function_privilege($1,$2,'EXECUTE') AS allowed",[user,helper.signature])).rows[0].allowed,false);
+            await denied(()=>c.query(helper.sql,helper.params),'42501');
+          }
+        }finally{await c.end();}
+      }
+      const locker=new pg.Client({...config,user:'stampies_permission_locker'});
+      try{await denied(()=>locker.connect(),'28000');}finally{await locker.end();}
+      const ownerState=(await admin.query("SELECT r.rolcanlogin,r.rolsuper,r.rolinherit,r.rolbypassrls, (SELECT count(*)::int FROM pg_catalog.pg_auth_members a WHERE a.roleid=r.oid OR a.member=r.oid) AS memberships, (SELECT count(*)::int FROM pg_catalog.pg_class c WHERE c.relowner=r.oid) AS tables FROM pg_catalog.pg_roles r WHERE r.rolname='stampies_permission_locker'")).rows[0];
+      assert.deepEqual(ownerState,{rolcanlogin:false,rolsuper:false,rolinherit:false,rolbypassrls:false,memberships:0,tables:0});
+      for(const schema of ['stampies_identity','stampies_loyalty'])assert.equal((await admin.query("SELECT has_schema_privilege('stampies_permission_locker',$1,'CREATE') AS allowed",[schema])).rows[0].allowed,false);
+    });
+
+    await t.test('every adapter method has a successful restricted-runtime path',async()=>{
+      await seed({role:'owner'});
+      const place=await ledger.createLocation({...args(),code:'new-branch',name:'New branch'});assert.match(place.id,/^[a-f0-9-]{36}$/);
+      const program=await ledger.createProgram({...args(),rewardText:'A free item',target:1,dailyLimit:20,cooldownSeconds:0,timeZone:'Australia/Sydney'});assert.equal(program.target,1);
+      const grant=await ledger.createEnrollmentGrant({...args(),programId:program.id});
+      const card=await ledger.enrollCustomer({publicCode:program.public_code,enrollmentToken:grant.token});
+      const operation={...args(),membershipId:card.membershipId,locationId:place.id};
+      assert.equal((await ledger.issueStamp(operation)).rewardReady,true);
+      assert.equal((await ledger.getMerchantPass(operation)).balance,1);
+      assert.equal((await ledger.redeemReward({...operation,idempotencyKey:args(2).idempotencyKey})).balance,0);
+      const final=await ledger.getMerchantPass(operation);assert.equal(final.lifetime_stamps,1);assert.equal(final.rewards_redeemed,1);
     });
 
     await t.test('all staff-controlled methods deny canonical viewer despite valid JWT',async()=>{
@@ -234,7 +300,7 @@ test('actual JS ledger adapter with restricted PostgreSQL login and deterministi
       }finally{o.release.resolve();c.release();}
     });
     await t.test('program deletion waits for grant creation then is refused by FK',async()=>{
-      await seed({card:false});const c=await admin.connect(),o=observed({pauseAfter:s=>s.startsWith('SELECT id,status,target')});
+      await seed({card:false});const c=await admin.connect(),o=observed({pauseAfter:s=>s.startsWith('SELECT * FROM stampies_loyalty.lock_program_lifecycle')});
       try{
         const pending=make(o.pool).createEnrollmentGrant({...args(),programId:P});await o.acquired.promise;
         const deletion=c.query('DELETE FROM stampies_loyalty.programs WHERE id=$1',[P]).then(x=>({x}),e=>({e}));

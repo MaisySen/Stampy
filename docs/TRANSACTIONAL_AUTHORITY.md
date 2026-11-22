@@ -76,18 +76,22 @@ execution and grants explicit runtime execution in one transaction.
 
 The function owner is stampies_permission_locker, a nonlogin, noninheriting,
 nonsuperuser role without database/role creation, replication or bypass-RLS
-capabilities. An unexpected unsafe existing role or any membership in that
-owner role makes migration fail. The role has no table ownership and only
-SELECT of required identity columns plus UPDATE(updated_at), because PostgreSQL
-requires some UPDATE privilege for row locks. The runtime never gets identity
-UPDATE. The owner temporarily receives schema CREATE only for ownership
+capabilities. The dedicated role must be absent cluster-wide before this versioned migration.
+ANY preexisting role is rejected, including one with harmless-looking flags:
+its inherited memberships, ownership and grants are not silently reused. The
+fresh role has no table ownership. It receives SELECT of required identity
+columns plus UPDATE(updated_at), and SELECT of lifecycle program/location
+fields plus UPDATE(id), because PostgreSQL requires some UPDATE privilege for
+row locks. The runtime never gets these UPDATE grants. The owner temporarily receives schema CREATE only for ownership
 transfer; it is revoked before COMMIT. Its functions use fully qualified
 relations and fixed search_path `pg_catalog, pg_temp`, no dynamic SQL.
 
-The loyalty runtime gets UPDATE(id) on program/location tables solely to permit
-FOR SHARE. It cannot update their status, target or rules. This is an explicit
-additional capability to change those IDs where constraints permit; it is not
-hidden as a read-only grant. The runtime already writes the loyalty ledger.
+Two additional static SECURITY DEFINER functions perform the program and
+location SHARE-lock queries. The runtime receives EXECUTE only, not UPDATE(id):
+it cannot rename UUIDs or update status, target or rules. All four helper ACLs
+are checked before COMMIT, including grants inherited from unsafe default
+function privileges. Any unexpected audience or runtime grant option aborts
+the whole migration rather than silently publishing an extra EXECUTE grant. The runtime already writes the loyalty ledger.
 It must remain a trusted server principal, never an exposed client connection.
 The function owner cannot be assumed by that runtime. Runtime cannot replace
 functions, change their owner/search_path or create objects in identity schema.
@@ -110,7 +114,8 @@ Run, with PostgreSQL server/client binaries available:
 Set PG_BIN to a directory containing PostgreSQL server binaries when needed.
 The original SQL/grants regression remains unchanged and does not apply002.
 The new harness applies actual identity001, loyalty001, runtime grants and002
-in a fresh cluster. The adapter connects as a dedicated nonsuperuser LOGIN
+in a fresh cluster. Actual auth-reader and Wallet schema/role provisioning is
+also applied for negative audience tests. The adapter connects as a dedicated nonsuperuser LOGIN
 inheriting only the runtime role, not as the migration owner or through SET
 ROLE on an administrative session. Administrative fixture/lifecycle operations
 use a separate test connection. Real independent connections, query barriers
@@ -121,8 +126,11 @@ Coverage includes all staff-method viewer denial, permission downgrade/revoke/
 delete and merchant/program/location/card lifecycle orderings, grant races,
 parallel stamps/replays/redemptions, tenant rejection, post-event rollback,
 local midnight/cooldown after lock waiting, and grant expiry/TTL after waiting.
-The new suite also inspects actual ACLs, owner/configuration and denied runtime
-identity/schema/function operations. It confirms cluster shutdown and removal.
+The new suite also proves rejection/atomic rollback of a preexisting locker
+role and unsafe function-default ACLs. It inspects actual ACLs, owner/configuration
+and denied runtime identity/schema/function/UUID operations, attempts all four
+helpers from real Wallet/auth-reader/PUBLIC-only login audiences, and exercises
+a successful restricted-runtime path through every adapter method. It confirms cluster shutdown and removal.
 
 Local PostgreSQL14.24 is the tested server, not a production deployment or
 all-supported-version certification. Complete DST, crash/power-loss recovery,
@@ -134,7 +142,9 @@ projection is added here.
 
 Use a privileged migration connection, not an application startup hook. Apply
 002 atomically before switching to the new adapter. It is a versioned migration,
-not an idempotent reconciliation script: do not rerun it silently. Existing
+not an idempotent reconciliation script: do not rerun it silently. Role names
+are cluster-wide; deployment to another database sharing a cluster needs a
+reviewed naming/provisioning plan, not ambient-role reuse. Existing
 identity/loyalty rows are retained. Test upgrading from the exact prior schema.
 
 On failure the SQL transaction rolls back functions/grants/role changes. On

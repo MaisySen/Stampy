@@ -81,7 +81,7 @@ export function createPostgresLoyaltyLedger({
 
   async function lockProgram(client, merchantId, programId) {
     const row = one(await client.query(
-      'SELECT id,status,target,daily_limit,cooldown_seconds,time_zone,reward_text FROM stampies_loyalty.programs WHERE merchant_id=$1 AND id=$2 FOR SHARE',
+      'SELECT * FROM stampies_loyalty.lock_program_lifecycle($1,$2)',
       [merchantId, programId],
     ));
     if (!row || row.status !== 'active') deny('PROGRAM_UNAVAILABLE');
@@ -218,7 +218,7 @@ export function createPostgresLoyaltyLedger({
       const programId = await discoverProgram(client, merchantId, membershipId);
       const program = await lockProgram(client, merchantId, programId);
       const place = one(await client.query(
-        'SELECT id,status FROM stampies_loyalty.locations WHERE merchant_id=$1 AND id=$2 FOR SHARE',
+        'SELECT * FROM stampies_loyalty.lock_location_lifecycle($1,$2)',
         [merchantId, locationId],
       ));
       if (!place || place.status !== 'active') deny('LOCATION_UNAVAILABLE');
