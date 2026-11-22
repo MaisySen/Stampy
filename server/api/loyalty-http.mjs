@@ -1,3 +1,5 @@
+import {performance} from 'node:perf_hooks';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 // Fetch-Request boundary for the canonical transactional ledger. No listener,
 // provider setup, cookie session, Wallet route or separate authorizer lives here.
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -23,28 +25,42 @@ async function readBody(request,{maxBodyBytes,bodyTimeoutMs}){
   if(length!==null&&Number(length)>maxBodyBytes)reject(413,'BODY_TOO_LARGE');
   if(!request.body)reject(400,'INVALID_JSON');
   const reader=request.body.getReader();
-  let timer,abort,bytes=0;
-  const chunks=[];
+  let timer,abort,bytes=0,reads=0;
+  const image=new Uint8Array(maxBodyBytes);
+  const maxReads=maxBodyBytes+33; // byte-by-byte body,32empty reads,thenEOF
+  const deadline=performance.now()+bodyTimeoutMs;
+  function guard(){
+    if(request.signal.aborted)reject(400,'REQUEST_ABORTED');
+    if(performance.now()>=deadline)reject(408,'REQUEST_TIMEOUT',true);
+  }
   const failed=new Promise((_,bad)=>{
     timer=setTimeout(()=>bad(new HttpError(408,'REQUEST_TIMEOUT',true)),bodyTimeoutMs);
     abort=()=>bad(new HttpError(400,'REQUEST_ABORTED'));
     request.signal.addEventListener('abort',abort,{once:true});
     if(request.signal.aborted)abort();
   });
+  // A synchronous guard may reject before the first race is installed. Keep
+  // the shared abort/deadline promise handled without hiding raced failures.
+  failed.catch(()=>{});
   try{
     for(;;){
+      guard();
+      if(++reads>maxReads)reject(413,'BODY_WORK_LIMIT');
       const {value,done}=await Promise.race([reader.read(),failed]);
+      guard(); // immediate producers cannot postpone this monotonic check
       if(done)break;
       if(!(value instanceof Uint8Array))reject(400,'INVALID_JSON');
-      bytes+=value.byteLength;
-      if(bytes>maxBodyBytes)reject(413,'BODY_TOO_LARGE');
-      chunks.push(value);
+      if(value.byteLength>maxBodyBytes-bytes)reject(413,'BODY_TOO_LARGE');
+      image.set(value,bytes);bytes+=value.byteLength;
+      if(reads%64===0){
+        // Give abort/timer/other request callbacks a turn, even if read() is
+        // perpetually fulfilled. Work/read accounting includes empty chunks.
+        await Promise.race([yieldTurn(),failed]);guard();
+      }
     }
     if(length!==null&&Number(length)!==bytes)reject(400,'INVALID_CONTENT_LENGTH');
-    const image=new Uint8Array(bytes);let offset=0;
-    for(const part of chunks){image.set(part,offset);offset+=part.byteLength;}
     let text,value;
-    try{text=new TextDecoder('utf-8',{fatal:true}).decode(image);value=JSON.parse(text);}catch{reject(400,'INVALID_JSON');}
+    try{text=new TextDecoder('utf-8',{fatal:true}).decode(image.subarray(0,bytes));value=JSON.parse(text);}catch{reject(400,'INVALID_JSON');}
     const fields=['businessId','membershipId','locationId'];
     if(!value||typeof value!=='object'||Array.isArray(value)||
       Object.keys(value).length!==fields.length||fields.some(f=>typeof value[f]!=='string'))reject(400,'INVALID_FIELDS');
@@ -53,6 +69,7 @@ async function readBody(request,{maxBodyBytes,bodyTimeoutMs}){
     // keys/values, including escaped key spellings. Never accept ambiguous JSON.
     if((text.match(/"(?:[^"\\]|\\.)*"/g)??[]).length!==6)reject(400,'DUPLICATE_FIELDS');
     if(!business.test(value.businessId)||!uuid.test(value.membershipId)||!uuid.test(value.locationId))reject(400,'INVALID_FIELDS');
+    guard();
     return {...value,membershipId:value.membershipId.toLowerCase(),locationId:value.locationId.toLowerCase()};
   }finally{
     clearTimeout(timer);request.signal.removeEventListener('abort',abort);
@@ -72,6 +89,8 @@ export function createLoyaltyHttpHandler({origin,ledger,maxBodyBytes=8192,maxHea
     !Number.isInteger(bodyTimeoutMs)||bodyTimeoutMs<1||bodyTimeoutMs>10000)throw new TypeError('Invalid loyalty HTTP configuration.');
   return async function handle(request){
     try{
+      if(typeof request?.url!=='string')reject(400,'INVALID_REQUEST');
+      if(request.url.length>8192)reject(414,'URI_TOO_LONG');
       const url=new URL(request.url);
       if(url.origin!==configured.origin||url.username||url.password||url.hash)return errorReply(404,'NOT_FOUND');
       const kind=url.pathname==='/api/v1/loyalty/stamps'?'stamp':url.pathname==='/api/v1/loyalty/redemptions'?'redeem':null;
@@ -80,8 +99,13 @@ export function createLoyaltyHttpHandler({origin,ledger,maxBodyBytes=8192,maxHea
       const method=kind?'POST':'GET';
       if(request.method!==method)return errorReply(405,'METHOD_NOT_ALLOWED',false,{Allow:method});
       let headerBytes=0;const encoder=new TextEncoder();
-      for(const [name,value]of request.headers)headerBytes+=encoder.encode(name).length+encoder.encode(value).length+4;
-      if(headerBytes>maxHeaderBytes)reject(431,'HEADERS_TOO_LARGE');
+      for(const [name,value]of request.headers){
+        // UTF-16 length is a cheap lower bound on these UTF-8 bytes. Reject
+        // huge values before encoding and stop iteration as soon as over cap.
+        if(headerBytes+name.length+value.length+4>maxHeaderBytes)reject(431,'HEADERS_TOO_LARGE');
+        headerBytes+=encoder.encode(name).length+encoder.encode(value).length+4;
+        if(headerBytes>maxHeaderBytes)reject(431,'HEADERS_TOO_LARGE');
+      }
       const requestOrigin=request.headers.get('origin');
       if(requestOrigin!==null&&requestOrigin!==configured.origin)reject(403,'ORIGIN_NOT_ALLOWED');
       const authorization=request.headers.get('authorization')??'';

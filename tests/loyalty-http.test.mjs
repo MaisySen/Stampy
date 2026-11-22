@@ -70,3 +70,29 @@ test('pass reads allow only one business query and no body/framing; malformed ad
  await status(h,get('?businessId=merchant'),503,'SERVICE_UNAVAILABLE');
  ledger.issueStamp=async()=>({kind:'stamp',balance:'1',duplicate:false});await status(h,request(),503,'SERVICE_UNAVAILABLE');
 });
+
+test('empty immediate chunks hit a finite work cap with cancellation and zero dispatch',async()=>{
+ const maxBodyBytes=256;const {calls,make}=fixture({maxBodyBytes});let emitted=0,cancelled=false;
+ const stream=new ReadableStream({pull(c){emitted++;c.enqueue(new Uint8Array(0));},cancel(){cancelled=true;}});
+ await status(make(),request({body:stream,duplex:'half'}),413,'BODY_WORK_LIMIT');
+ assert.ok(emitted<=maxBodyBytes+35,'read budget plus finite stream prefetch');assert.equal(cancelled,true);assert.equal(calls.length,0);
+});
+test('absolute deadline rejects immediately fulfilled reads even while timer callback is starved',async()=>{
+ const {calls,make}=fixture({bodyTimeoutMs:1});let cancelled=false;
+ const payload=new TextEncoder().encode(JSON.stringify(body));
+ const stream=new ReadableStream({pull(c){const until=performance.now()+6;while(performance.now()<until){} c.enqueue(payload);},cancel(){cancelled=true;}});
+ await status(make(),request({body:stream,duplex:'half'}),408,'REQUEST_TIMEOUT');assert.equal(cancelled,true);assert.equal(calls.length,0);
+});
+test('immediate producer yields for asynchronous abort instead of monopolizing microtasks',async()=>{
+ const {calls,make}=fixture();let emitted=0,cancelled=false;const controller=new AbortController();
+ const stream=new ReadableStream({pull(c){emitted++;c.enqueue(new Uint8Array(0));},cancel(){cancelled=true;}});
+ setImmediate(()=>controller.abort());
+ await status(make(),request({body:stream,duplex:'half',signal:controller.signal}),400,'REQUEST_ABORTED');
+ assert.ok(emitted<1000,'abort runs at a bounded yield, before the full work budget');assert.equal(cancelled,true);assert.equal(calls.length,0);
+});
+test('legitimate one-byte fragmentation is accepted and URL budget rejects before route dispatch',async()=>{
+ const {calls,make}=fixture({maxBodyBytes:256});const payload=new TextEncoder().encode(JSON.stringify(body));let i=0;
+ const stream=new ReadableStream({pull(c){if(i===payload.length)c.close();else {c.enqueue(payload.slice(i,i+1));i++;}}});
+ await status(make(),request({body:stream,duplex:'half'}),200);assert.equal(calls.length,1);
+ await status(make(),new Request(origin+'/api/v1/loyalty/stamps?x='+'x'.repeat(8192),{method:'POST',headers,body:JSON.stringify(body)}),414,'URI_TOO_LONG');assert.equal(calls.length,1);
+});

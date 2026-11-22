@@ -81,7 +81,7 @@ only a stable code and retryable flag, never token, stack, SQL or driver text.
 |405|Wrong method, with Allow header|No|
 |408|Body deadline exceeded before command dispatch|Same key only|
 |409|Idempotency mismatch, reward state, daily limit or cooldown conflict|No blind retries or new key|
-|413/415/431|Body too large, unsupported media/encoding or normalized headers too large|No|
+|413/414/415/431|Body/read-work too large, URL too long, unsupported media/encoding or normalized headers too large|No|
 |503|Backend failure or invalid adapter result|Same key only|
 
 A request can lose its response after COMMIT. Retry the identical command with
@@ -98,11 +98,25 @@ reviewed allowlist/CSRF/session plan, not a permissive default.
 ## Resource and transport boundary
 
 Defaults are8192 body bytes,8192 normalized header bytes and a5000ms total body
-read deadline. Explicit bounded configuration supports128..65536 body bytes,
+read/parse deadline. The normalized Request URL is capped at8192characters
+before URL parsing. Explicit bounded configuration supports128..65536 body bytes,
 256..32768 normalized header bytes and1..10000ms. Declared length is validated,
-but actual streamed bytes are always counted. Compressed bodies are refused,
-UTF-8 decoding is fatal on invalid sequences, and abort/deadline/limit paths
-cancel the reader without waiting on an untrusted asynchronous cancel hook.
+but actual streamed bytes are always counted. One preallocated byte image
+bounds retained body memory; chunk objects are not accumulated. A separate
+read-work budget of maxBodyBytes+33 counts every read, including empty chunks
+and EOF. It permits a fully one-byte-fragmented body plus32empty reads; an
+excessive zero-byte producer gets413 BODY_WORK_LIMIT with no ledger dispatch.
+
+A monotonic absolute deadline is checked before/after each read, after each
+periodic event-loop yield and after parsing. A timer additionally interrupts
+stalled awaits. Every64reads explicitly yields so an immediately fulfilled
+producer cannot starve timer/abort callbacks or other requests indefinitely.
+The deadline detects expiry when execution resumes; it cannot preempt arbitrary
+synchronous producer code or guarantee a response by an exact millisecond.
+Compressed bodies are refused, UTF-8 decoding is fatal on invalid sequences,
+and abort/deadline/limit paths cancel the reader without waiting on an untrusted
+asynchronous cancel hook. Normalized headers reject over-budget values before
+encoding allocations where possible, and stop iteration immediately on overflow.
 
 The Request object already exists at this boundary. A production network
 adapter must independently cap raw headers/targets/connections and enforce
@@ -115,6 +129,11 @@ production ingress is added here.
 
 - tests/loyalty-http.test.mjs explicitly stubs the ledger to isolate transport
   validation, budgets, cancellation, error mapping and response filtering.
+  Adversarial regressions include infinite immediate empty chunks, a producer
+  delaying timer processing, asynchronous abort fairness, legitimate one-byte
+  fragmentation and pre-parse URL rejection. All refusal paths check no ledger
+  side effect. The original reviewer20,000empty-chunk probe also rejects with
+  zero dispatch on the corrected source; it is not claimed as a load benchmark.
 - tests/loyalty-http-postgres.test.mjs uses actual signed RS256 test tokens,
   a pinned local synthetic JWKS and the actual OIDC verifier, actual ledger,
   current migrations and a restricted PostgreSQL LOGIN. This is not a live IdP.
