@@ -253,7 +253,7 @@ export function StampScreen({
             <Text style={shared.cardTitle}>Stamp blocked</Text>
             <Text style={shared.cardMuted}>{blockMessage(blocked)}</Text>
             <Text style={[shared.cardMuted, styles.blockedSub]}>
-              Fraud controls: one stamp per day, and 60 seconds between stamps.
+              Demo checks on this device: one stamp per day, and 60 seconds between stamps. Not enforced by a server.
             </Text>
           </View>
           <TouchableOpacity
@@ -277,8 +277,9 @@ export function StampScreen({
       )}
 
       <Text style={styles.note}>
-        Fraud controls apply: staff PIN, 60 second cooldown, one stamp per
-        day per business. No login is needed.
+        Demo checks run on this device only: the staff code for Staff stamps, a
+        60 second cooldown, and one stamp per day. A server does not enforce
+        them yet. No login is needed.
       </Text>
     </View>
   );

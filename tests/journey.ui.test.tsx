@@ -423,3 +423,44 @@ test("Wallet preview and local redemption are not presented as issued or confirm
     r.unmount();
   }
 });
+
+test("stamp cooldown and one-per-day are enforced on this device and survive a restart", async () => {
+  const h = harness();
+  seedProgram(h.backend, 5);
+  let r = await h.mount();
+  try {
+    await press(r, "Stamp");
+    await press(r, "Scan");
+    await press(r, "Demo only: add a stamp without scanning");
+    assert.equal(savedLedger(h.backend).progress, 1);
+  } finally {
+    r.unmount();
+  }
+  // Restart, then try again at once: blocked, progress unchanged.
+  r = await h.mount();
+  try {
+    await press(r, "Stamp");
+    await press(r, "Scan");
+    await press(r, "Demo only: add a stamp without scanning");
+    assert.match(screenText(r), /Stamp blocked/);
+    assert.match(screenText(r), /Not enforced by a server/);
+    assert.equal(savedLedger(h.backend).progress, 1);
+  } finally {
+    r.unmount();
+  }
+});
+
+test("unsupported claims are qualified: no location use, demo-only checks", async () => {
+  const h = harness();
+  const r = await h.mount();
+  try {
+    const wallet = screenText(r);
+    assert.match(wallet, /does not use your location/);
+    assert.match(wallet, /Nearby nudge preview \(not active\)/);
+    assert.doesNotMatch(wallet, /does not track you live/);
+    await press(r, "Stamp");
+    assert.match(screenText(r), /Demo checks run on this device only/);
+  } finally {
+    r.unmount();
+  }
+});

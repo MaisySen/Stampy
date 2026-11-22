@@ -230,8 +230,8 @@ export function PassInstallScreen({
       </View>
 
       <Text style={styles.privacy}>
-        The pass only knows where the business is. Stampies does not track you
-        live.
+        Planned design: the pass would only know where the business is. This
+        preview does not use your location.
       </Text>
     </View>
   );

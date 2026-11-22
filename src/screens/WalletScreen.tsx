@@ -65,7 +65,7 @@ export function WalletScreen({
         <View style={[shared.card, styles.alertsCard]}>
           <Text style={shared.cardTitle}>No new alerts</Text>
           <Text style={[shared.cardMuted, styles.alertsSub]}>
-            Nearby nudges and birthday treats will show here when they arrive.
+            Nearby nudges and birthday treats are planned. They are not active in this demo.
           </Text>
         </View>
       )}
@@ -122,7 +122,7 @@ export function WalletScreen({
           <Ionicons name="location-outline" size={20} color={colors.darkText} />
         </View>
         <View style={styles.nudgeText}>
-          <Text style={shared.cardTitle}>You are near {businessName}</Text>
+          <Text style={shared.cardTitle}>Nearby nudge preview (not active)</Text>
           <Text style={shared.cardMuted}>{nudgeText}</Text>
         </View>
       </View>
@@ -133,7 +133,7 @@ export function WalletScreen({
             <Ionicons name="gift-outline" size={20} color={colors.darkText} />
           </View>
           <View style={styles.nudgeText}>
-            <Text style={shared.cardTitle}>Happy birthday</Text>
+            <Text style={shared.cardTitle}>Birthday preview (demo date)</Text>
             <Text style={shared.cardMuted}>
               Demo birthday treat. Show this card at the counter.
             </Text>
@@ -145,10 +145,10 @@ export function WalletScreen({
             <Ionicons name="gift-outline" size={20} color={colors.darkText} />
           </View>
           <View style={styles.nudgeText}>
-            <Text style={shared.cardTitle}>Birthday this month</Text>
+            <Text style={shared.cardTitle}>Birthday preview (demo date)</Text>
             <Text style={shared.cardMuted}>
-              A free slice is waiting. It lands on your card in {birthdayInDays}{" "}
-              {birthdayInDays === 1 ? "day" : "days"}.
+              Planned: a birthday treat. Demo date, {birthdayInDays}{" "}
+              {birthdayInDays === 1 ? "day" : "days"} away. Not active.
             </Text>
           </View>
         </View>
@@ -158,17 +158,18 @@ export function WalletScreen({
             <Ionicons name="gift-outline" size={20} color={colors.darkText} />
           </View>
           <View style={styles.nudgeText}>
-            <Text style={shared.cardTitle}>Birthday in {birthdayInDays} days</Text>
+            <Text style={shared.cardTitle}>Birthday preview (demo date)</Text>
             <Text style={shared.cardMuted}>
-              A free slice is waiting. It will appear on your card on the day.
+              Planned: a birthday treat on the day. Demo date, not active.
             </Text>
           </View>
         </View>
       )}
 
       <Text style={styles.privacy}>
-        Your card only knows where the business is. Your phone works out when
-        you are nearby, on the device. Stampies does not track you live.
+        Planned design: the card would only know where the business is, and your
+        phone would work out when you are nearby, on the device. This demo does
+        not use your location.
       </Text>
     </View>
   );
