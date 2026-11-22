@@ -96,9 +96,9 @@ trusted to grant a stamp. Event IDs are server-generated.
   real merchant/customer API, pending/error states and server-confirmed
   results. Never show "Added to Wallet", "Stamp earned" or "Reward redeemed"
   without the corresponding verified result.
-- Add DB integration tests against an isolated disposable Postgres,
-  including actual concurrent transactions, migration/grant validation,
-  clock/DST transitions, request replay, rollback and crash recovery.
+- Extend real-Postgres coverage beyond migration/grant validation and rollback
+  to actual concurrent JS-adapter transactions, clock/DST transitions,
+  request replay and crash recovery.
 - Add merchant billing, role-scoped dashboards, consent-driven campaigns,
   customer privacy controls, reporting, multi-location administration,
   fraud monitoring, backups and operational tools.
@@ -106,14 +106,41 @@ trusted to grant a stamp. Event IDs are server-generated.
 
 ## Verification
 
-Run: node --test tests/loyalty-ledger.test.mjs
+Run the deterministic domain tests:
+
+    node --test tests/loyalty-ledger.test.mjs
+
+Run the real PostgreSQL migration/grant regression (as an unprivileged OS user):
+
+    node --test tests/loyalty-ledger-postgres.test.mjs
+
+Install PostgreSQL server/client binaries first. Set `PG_BIN` to the directory
+containing `initdb`, `pg_ctl` and `postgres` if they are not on PATH or in
+`/usr/lib/postgresql/<version>/bin`. `psql` may be in that directory or on PATH.
+Missing binaries fail the test; they are not counted as a skipped pass.
+
+The regression starts a fresh disposable cluster with a private Unix socket,
+TCP disabled and no external connection string. It applies the exact pinned
+PR #5 identity fixture, this migration, and the runtime-role grants. It checks
+five empty tables, enrollment-grant columns and indexes, valid/invalid digests,
+expiry and one-time deletion, tenant foreign keys, defaults, bounds, uniqueness,
+permitted and forbidden runtime operations, PUBLIC isolation and transaction
+rollback. All test rows and roles stay inside the disposable cluster, which
+is stopped and removed afterward. No existing database is accessed.
+
+This is migration/SQL/grant coverage, not concurrent JS-adapter integration,
+crash-recovery testing, device verification or production enablement.
+The loyalty workflow runs both test files. Existing CI account restrictions
+are not bypassed by these local results.
 
 Fixture tests cover valid and repeated stamps, idempotency conflicts,
 configurable rewards, redemption, tenant authorisation, daily limits,
 timezone boundaries, staff revocation and one-time anonymous enrolment.
 The GitHub workflow Stampies Loyalty Ledger runs these on relevant PRs.
-These tests use a deterministic test DB adapter, NOT a production database
-or a physical phone. Do not merge without passing CI and independent review.
+These domain fixture tests use a deterministic test DB adapter, NOT a production
+database or a physical phone. The separate migration/grant regression above
+uses real disposable PostgreSQL. Do not merge without passing CI and independent
+review.
 
-**Status: committed implementation awaiting test verification and integration.
-No production data touched.**
+**Status: migration repair verified locally; CI and wider integration remain
+release gates. No production data touched.**
