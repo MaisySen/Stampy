@@ -5,6 +5,7 @@ on:
     paths:
       - 'server/loyalty/**'
       - 'server/auth/**'
+      - 'server/wallet/postgres/**'
       - 'tests/loyalty-ledger*.test.mjs'
       - 'tests/fixtures/merchant-identities.pr5.sql'
       - '.github/workflows/stampies-loyalty-ledger.yml'
