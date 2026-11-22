@@ -35,11 +35,11 @@ export function ProgramStampCard({
       <View style={styles.countRow}>
         <Text style={styles.count}>
           {filled}
-          <Text style={styles.countTotal}> / {paidVisits} paid visits</Text>
+          <Text style={[styles.countTotal, styles.totalText]}> / {paidVisits} paid visits</Text>
         </Text>
         <View style={styles.rewardPill}>
           <Text style={styles.rewardPillText}>
-            {eligible ? "Free visit ready" : "Paid visits"}
+            {eligible ? "Free visit ready" : "Collecting"}
           </Text>
         </View>
       </View>
@@ -67,6 +67,11 @@ export function ProgramStampCard({
 }
 
 const styles = StyleSheet.create({
+  totalText: {
+    fontSize: 18,
+    fontWeight: "600",
+    letterSpacing: 0,
+  },
   demoLine: {
     marginTop: 2,
   },
