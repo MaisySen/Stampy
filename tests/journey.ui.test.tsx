@@ -536,3 +536,28 @@ test("starting a new card after unreadable progress cannot collide with a queued
     r.unmount();
   }
 });
+
+test("legal pages no longer state live Wallet, location or 9 stamp claims", async () => {
+  const h = harness();
+  const r = await h.mount();
+  try {
+    await press(r, "Program");
+    await press(r, "Privacy policy");
+    let text = screenText(r);
+    assert.match(text, /does not use your location/);
+    assert.match(text, /Planned design, not active/);
+    assert.doesNotMatch(text, /does not track a customer live/);
+    await press(r, "Back");
+    await press(r, "Terms of use");
+    text = screenText(r);
+    assert.match(text, /not enforced by a server/);
+    assert.match(text, /planned and not live/);
+    await press(r, "Back");
+    await press(r, "Support");
+    text = screenText(r);
+    assert.match(text, /8 paid visits, then the next visit is the free reward visit/);
+    assert.doesNotMatch(text, /9 stamps/);
+  } finally {
+    r.unmount();
+  }
+});
