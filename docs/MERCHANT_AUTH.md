@@ -44,7 +44,15 @@ Identity records are scoped by the exact (issuer, subject) of the verified
 provider token, plus a membership on the matched merchant. Database business
 IDs must exactly match Wallet ledger businessId values.
 
-## Service composition
+## Qualified atomic API composition
+
+For the actual loyalty write boundary use the isolated host/application in
+ISOLATED_LOYALTY_HOST.md. It verifies identity and locks canonical permissions
+inside the SAME ledger transaction. It deliberately excludes /wallet/stamps.
+The historical Wallet adapter example below is not that boundary and must not
+be used to claim atomic authorization or a connected merchant session.
+
+## Historical Wallet adapter example, not qualified for atomic writes
 
 After PR #3 adds the required authorizeStamp hook to the Wallet service,
 the trusted backend can compose these already implemented modules:

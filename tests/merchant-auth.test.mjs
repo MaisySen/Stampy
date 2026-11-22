@@ -28,7 +28,7 @@ function verifierFixture() {
     issuer, audience, jwksUri, clock: now,
     fetchImpl: async () => {
       count++;
-      return {ok: true, text: async () => JSON.stringify({keys})};
+      return Response.json({keys});
     },
   });
   return {verifyAccessToken, calls: () => count, setKeys: (value) => { keys = value; }};
@@ -85,12 +85,12 @@ test('OIDC verifier refreshes for rotated key IDs, and fails closed on missing J
 test('OIDC verifier rejects duplicate JWKS key IDs and unusable JWKS bodies', async () => {
   const duplicate = createOidcAccessTokenVerifier({
     issuer, audience, jwksUri, clock: now,
-    fetchImpl: async () => ({ok: true, text: async () => JSON.stringify({keys: [publicJwk, publicJwk]})}),
+    fetchImpl: async () => Response.json({keys: [publicJwk, publicJwk]}),
   });
   assert.equal(await duplicate(token()), null);
   const malformed = createOidcAccessTokenVerifier({
     issuer, audience, jwksUri, clock: now,
-    fetchImpl: async () => ({ok: true, text: async () => '{not-valid-json'}),
+    fetchImpl: async () => new Response('{not-valid-json'),
   });
   assert.equal(await malformed(token()), null);
 });
@@ -176,4 +176,31 @@ test('merchant stamp authorizer denies revoked, suspended, invited, viewer and c
   });
   assert.equal(await failedStore({request, stamp: {businessId: 'cafe-1'}}), false);
   assert.throws(() => createMerchantStampAuthorizer({verifyAccessToken: f.verifyAccessToken}), /membership lookup/);
+});
+
+test('JWKS transport refuses redirects and caps actual streamed bytes/work with cancellation',async()=>{
+ let options,cancelled=false;
+ const large=createOidcAccessTokenVerifier({issuer,audience,jwksUri,clock:now,fetchImpl:async(_url,opts)=>{options=opts;return new Response(new ReadableStream({pull(c){c.enqueue(new Uint8Array(65537));},cancel(){cancelled=true;}}));}});
+ assert.equal(await large(token()),null);assert.equal(options.redirect,'error');assert.equal(cancelled,true);
+ const redirected=createOidcAccessTokenVerifier({issuer,audience,jwksUri,clock:now,fetchImpl:async()=>Response.redirect('https://other.example/keys',302)});
+ assert.equal(await redirected(token()),null);
+ let reads=0,emptyCancelled=false;
+ const empty=createOidcAccessTokenVerifier({issuer,audience,jwksUri,clock:now,jwksTimeoutMs:1000,fetchImpl:async()=>new Response(new ReadableStream({pull(c){reads++;c.enqueue(new Uint8Array(0));},cancel(){emptyCancelled=true;}}))});
+ assert.equal(await empty(token()),null);assert.ok(reads<=65571);assert.equal(emptyCancelled,true);
+});
+test('JWKS fetch and body stall expire even when custom fetch ignores AbortSignal',async()=>{
+ let signal,cancelled=false;
+ const fetchStall=createOidcAccessTokenVerifier({issuer,audience,jwksUri,clock:now,jwksTimeoutMs:20,fetchImpl:async(_url,opts)=>{signal=opts.signal;return new Promise(()=>{});}});
+ assert.equal(await fetchStall(token()),null);assert.equal(signal.aborted,true);
+ const bodyStall=createOidcAccessTokenVerifier({issuer,audience,jwksUri,clock:now,jwksTimeoutMs:20,fetchImpl:async()=>new Response(new ReadableStream({cancel(){cancelled=true;}}))});
+ assert.equal(await bodyStall(token()),null);assert.equal(cancelled,true);
+});
+
+test('JWKS absolute deadline detects timer-starved fetch and cancels late ignored-abort responses',async()=>{
+ let cancelled=false,release;
+ const starved=createOidcAccessTokenVerifier({issuer,audience,jwksUri,clock:now,jwksTimeoutMs:10,fetchImpl:async()=>{const end=performance.now()+25;while(performance.now()<end){}return Response.json({keys:[publicJwk]});}});
+ assert.equal(await starved(token()),null);
+ const late=createOidcAccessTokenVerifier({issuer,audience,jwksUri,clock:now,jwksTimeoutMs:10,fetchImpl:()=>new Promise(r=>release=r)});
+ assert.equal(await late(token()),null);release(new Response(new ReadableStream({cancel(){cancelled=true;}})));
+ await new Promise(r=>setImmediate(r));assert.equal(cancelled,true);
 });

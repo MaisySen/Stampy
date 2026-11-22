@@ -41,7 +41,7 @@ test('HTTP contract through actual verifier, ledger and restricted PostgreSQL', 
    const first=encode({alg:'RS256',kid:'local-test-key',typ:'at+jwt'})+'.'+encode({iss:issuer,sub:'staff-1',aud:'stampy-test-api',iat:at.getTime()/1000,exp:at.getTime()/1000+3600,...claims});
    return first+'.'+sign('RSA-SHA256',Buffer.from(first),signer).toString('base64url');
   }
-  const verifyAccessToken=createOidcAccessTokenVerifier({issuer,audience:'stampy-test-api',jwksUri:issuer+'keys',clock:()=>at.getTime(),fetchImpl:async()=>({ok:true,text:async()=>JSON.stringify({keys:[jwk]})})});
+  const verifyAccessToken=createOidcAccessTokenVerifier({issuer,audience:'stampy-test-api',jwksUri:issuer+'keys',clock:()=>at.getTime(),fetchImpl:async()=>Response.json({keys:[jwk]})});
   const make=(pool=runtime)=>createLoyaltyHttpHandler({origin,ledger:createPostgresLoyaltyLedger({pool,verifyAccessToken,now:()=>new Date(at)})});
   const handler=make(),good=access();
   const body={businessId:'http-merchant',membershipId:C,locationId:L};
