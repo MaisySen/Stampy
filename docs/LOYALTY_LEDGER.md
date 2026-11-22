@@ -111,9 +111,13 @@ Run the deterministic domain tests:
 
     node --test tests/loyalty-ledger.test.mjs
 
-Run the real PostgreSQL migration/grant regression (as an unprivileged OS user):
+Run the original PostgreSQL migration/grant regression (as an unprivileged OS user):
 
     node --test tests/loyalty-ledger-postgres.test.mjs
+
+Run the actual JS-adapter transaction/lifecycle suite with a restricted LOGIN:
+
+    node --test tests/loyalty-ledger-authority-postgres.test.mjs
 
 Install PostgreSQL server/client binaries first. Set `PG_BIN` to the directory
 containing `initdb`, `pg_ctl` and `postgres` if they are not on PATH or in
@@ -122,7 +126,8 @@ Missing binaries fail the test; they are not counted as a skipped pass.
 
 The regression starts a fresh disposable cluster with a private Unix socket,
 TCP disabled and no external connection string. It applies the exact pinned
-PR #5 identity fixture, this migration, and the runtime-role grants. It checks
+PR #5 identity fixture, loyalty001, and the original runtime-role grants.
+It deliberately does not apply002 or claim JS-adapter coverage. It checks
 five empty tables, enrollment-grant columns and indexes, valid/invalid digests,
 expiry and one-time deletion, tenant foreign keys, defaults, bounds, uniqueness,
 permitted and forbidden runtime operations, PUBLIC isolation and transaction
@@ -131,8 +136,13 @@ is stopped and removed afterward. No existing database is accessed.
 
 This is migration/SQL/grant coverage, not concurrent JS-adapter integration,
 crash-recovery testing, device verification or production enablement.
-The loyalty workflow runs both test files. Existing CI account restrictions
-are not bypassed by these local results.
+The loyalty workflow runs all three test files using the loyalty-ledger wildcard.
+The new authority suite separately applies the actual auth001 schema, loyalty001,
+runtime grants and002, and exercises the real JS adapter through an unprivileged
+LOGIN inheriting only the loyalty runtime role. Its lifecycle barriers, exact
+privilege checks, cleanup and limits are described in TRANSACTIONAL_AUTHORITY.md.
+Changes to server/auth also trigger this workflow because that schema is a live
+dependency. Local results do not substitute for CI on the exact source tip.
 
 Fixture tests cover valid and repeated stamps, idempotency conflicts,
 configurable rewards, redemption, tenant authorisation, daily limits,

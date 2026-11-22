@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'server/loyalty/**'
+      - 'server/auth/**'
       - 'tests/loyalty-ledger*.test.mjs'
       - 'tests/fixtures/merchant-identities.pr5.sql'
       - '.github/workflows/stampies-loyalty-ledger.yml'
