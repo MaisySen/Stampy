@@ -103,6 +103,6 @@ test('pipelining while a write is in flight destroys connection, not an unbounde
   let entered,release,calls=0;const inside=new Promise(r=>entered=r);
   const f=await start({handler:async()=>{calls++;entered();await new Promise(r=>release=r);return Response.json({ok:true});}});
   const socket=connect({host:'127.0.0.1',port:f.port});socket.on('error',()=>{});
-  try{await once(socket,'connect');socket.write(raw());await inside;const closed=once(socket,'close');socket.write(next.repeat(200));await closed;assert.equal(calls,1);assert.equal(f.host.inspect().active,1);release();await idle(f.host);}finally{release?.();socket.destroy();await f.host.close();}
+  try{await once(socket,'connect');socket.write(raw());await inside;const closed=new Promise(resolve=>socket.once('close',resolve));socket.write(next.repeat(200));await closed;assert.equal(calls,1);assert.equal(f.host.inspect().active,1);release();await idle(f.host);}finally{release?.();socket.destroy();await f.host.close();}
  }
 });
