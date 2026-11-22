@@ -44,12 +44,18 @@ export function createLoyaltyHttpHost({origin,handler,maxInFlight=8,maxConnectio
       req.on('data',data);req.once('end',done);req.once('error',bad);req.once('aborted',bad);
     });
   }
+  function claim(req){
+    const state=socketState.get(req.socket);
+    // Never queue a second response behind an in-flight write. Merely setting
+    // Connection:close on that queued response permits unbounded pipelining.
+    if(!state||++state.requests!==1){req.socket.destroy();return false;}
+    clearTimeout(state.headerTimer);return true;
+  }
+  function rawReject(socket,status){socket.pause();socket.once('finish',()=>socket.destroy());socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);}
   async function serve(req,res) {
     let admitted=false,operationTimer;
     try {
-      const state=socketState.get(req.socket);
-      if(!state||++state.requests!==1)return end(res,400);
-      clearTimeout(state.headerTimer);
+      if(!claim(req))return;
       if(closing)return end(res,503);
       const method=req.method??'',target=req.url??'';
       if(target.length>8192)deny(414);
@@ -107,11 +113,11 @@ export function createLoyaltyHttpHost({origin,handler,maxInFlight=8,maxConnectio
     sockets.add(socket);const state={requests:0,headerTimer:setTimeout(()=>socket.destroy(),headerTimeoutMs)};socketState.set(socket,state);
     socket.once('close',()=>{clearTimeout(state.headerTimer);sockets.delete(socket);});
   });
-  server.on('checkContinue',(_,res)=>end(res,417));
-  server.on('checkExpectation',(_,res)=>end(res,417));
-  server.on('upgrade',(_,socket)=>socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'));
-  server.on('connect',(_,socket)=>socket.end('HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'));
-  server.on('clientError',(error,socket)=>{if(socket.writable)socket.end(`HTTP/1.1 ${error.code==='HPE_HEADER_OVERFLOW'?'431 Request Header Fields Too Large':'400 Bad Request'}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);else socket.destroy();});
+  server.on('checkContinue',(req,res)=>{if(claim(req))end(res,417);});
+  server.on('checkExpectation',(req,res)=>{if(claim(req))end(res,417);});
+  server.on('upgrade',(req,socket)=>{if(claim(req))rawReject(socket,'400 Bad Request');});
+  server.on('connect',(req,socket)=>{if(claim(req))rawReject(socket,'405 Method Not Allowed');});
+  server.on('clientError',(error,socket)=>{if(socket.writable)rawReject(socket,error.code==='HPE_HEADER_OVERFLOW'?'431 Request Header Fields Too Large':'400 Bad Request');else socket.destroy();});
   function close(){if(closePromise)return closePromise;closing=true;closePromise=(async()=>{const stopped=new Promise((resolve,reject)=>{if(!server.listening)return resolve();server.close(error=>error?reject(error):resolve());});for(const socket of sockets)socket.destroy();await stopped;await Promise.allSettled([...jobs]);})();return closePromise;}
   return Object.freeze({server,close,inspect:()=>Object.freeze({active,connections:sockets.size,closing})});
 }

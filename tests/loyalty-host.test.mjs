@@ -97,3 +97,12 @@ test('host monotonic operation deadline catches timer-starved handler; untrusted
  let seen;const f=await start({operationTimeoutMs:10,handler:async req=>{seen=req;const end=performance.now()+25;while(performance.now()<end){}return Response.json({ok:true});}});
  try{assert.equal(code(await exchange(f.port,raw('/api/v1/loyalty/stamps','Cookie: session=fake\r\nForwarded: host=evil.example\r\nX-Forwarded-Host: evil.example\r\n'))),503);for(const k of ['cookie','forwarded','x-forwarded-host'])assert.equal(seen.headers.has(k),false);}finally{await f.host.close();}
 });
+
+test('pipelining while a write is in flight destroys connection, not an unbounded response queue',async()=>{
+ for(const next of [raw(),raw('/api/v1/loyalty/stamps','Expect: 100-continue\r\n')]){
+  let entered,release,calls=0;const inside=new Promise(r=>entered=r);
+  const f=await start({handler:async()=>{calls++;entered();await new Promise(r=>release=r);return Response.json({ok:true});}});
+  const socket=connect({host:'127.0.0.1',port:f.port});socket.on('error',()=>{});
+  try{await once(socket,'connect');socket.write(raw());await inside;const closed=once(socket,'close');socket.write(next.repeat(200));await closed;assert.equal(calls,1);assert.equal(f.host.inspect().active,1);release();await idle(f.host);}finally{release?.();socket.destroy();await f.host.close();}
+ }
+});

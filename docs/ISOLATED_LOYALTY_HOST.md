@@ -29,7 +29,9 @@ application dispatch. A different listener running the old Wallet server is
 not disabled by this factory; deployment routing and old listener retirement
 remain an operator release gate.
 
-Requests use one connection each and always close it. The parser caps raw header
+Requests use one connection each and always close it. A second parsed request
+on any protocol event destroys the socket immediately, rather than queueing
+a response behind an in-flight operation. The parser caps raw header
 bytes at8192; the host rejects more than64 fields and ALL duplicate names,
 including authorization, Host and idempotency fields. A raw target is capped
 at8192 characters, must be origin-form and unnormalized, and cannot contain
